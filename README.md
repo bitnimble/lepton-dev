@@ -68,8 +68,8 @@ bin/status.sh <ctx>; bin/lepton-lines.sh <ctx>; bin/diag.sh <ctx> <package>
 bin/shot.sh <ctx> <name>; bin/tap.sh <ctx> <name> x y [x y…]      # 150ms presses: Unity drops short taps
 ```
 
-`.apkm` bundles need a Steam-style launch (`runner/run-steamlaunch-rootful.sh <appid> <file.apkm> [wait]`,
-context `steamlaunch-<appid>`, verb `waitforexitandrun -- <path>`). A session's container IP is shown by
+`.apkm` bundles need a Steam-style launch (`bin/steamlaunch.sh <appid> <file.apkm> [wait]`, which runs
+`runner/run-steamlaunch-rootful.sh`; context `steamlaunch-<appid>`, verb `waitforexitandrun -- <path>`). A session's container IP is shown by
 `lepton ps`; its adbd (TCP 5555, `ro.adb.secure=0`) accepts `adb connect` from the runner.
 
 Android boots in ~20s with software rendering. Lepton refuses an existing profile whose runtime fingerprint
@@ -81,10 +81,16 @@ Android boots in ~20s with software rendering. Lepton refuses an existing profil
 | --- | --- |
 | Fossify Calculator (x86_64) | Runs; injected taps work (`docs/screens/calculator-input.png`) |
 | AAAAXY 1.8.34 arm64-only | Renders in-game via `libndk_translation` (`docs/screens/aaaaxy-arm64.png`) |
-| Pokémon UNITE 1.25.1.1 (`jp.pokemon.pokemonunite`) | Installs, downloads update, interactive; guest onboarding in progress on `gapps` (appid 900002) |
+| Pokémon UNITE 1.25.1.1 (`jp.pokemon.pokemonunite`) | Guest login, trainer name, 8.4 GB asset download on `gapps` (appid 900002, light translator mode) |
 | Mantis Gamepad Pro 3.4.9.1 (`app.mantispro.gamepad`) | Installs/runs (Flutter, arm64); requires Google sign-in, so needs the `gapps` stage |
 
 ## Known issues
+
+- UNITE hangs on "Loading..." after guest login in the translator's tiered mode, which Lepton picks
+  automatically after install (`baked/lepton-ndk-mode`): native `MSDKV5-Http-*` threads spin forever,
+  one caught inside `HeavyOptimizeRegion → ResolveJumps → SplitBasicBlock` (`debuggerd -b <pid>`;
+  `debuggerd -j` and SIGQUIT are swallowed by CrashSight). `light-translate-or-interpret` works: set
+  `LEPTON_NDK_TRANSLATION_MODE` per launch, or write the mode into the game's `baked/lepton-ndk-mode`.
 
 - `/data/media/0` symlinks to a host compatdata path not visible in the container: OBB links and
   `/storage/emulated/0` fail (`vold: Failed to find mounted volume`).
