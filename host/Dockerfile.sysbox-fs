@@ -1,0 +1,15 @@
+FROM golang:1.25-trixie AS build
+RUN apt-get update && apt-get install -y --no-install-recommends libseccomp-dev pkg-config protobuf-compiler libprotobuf-dev && rm -rf /var/lib/apt/lists/*
+RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.8 \
+    && go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
+COPY . /src
+RUN cd /src/sysbox-ipc/sysboxFsGrpc/sysboxFsProtobuf && protoc -I . -I /usr/include sysboxFsProtobuf.proto --go_out=. --go-grpc_out=. \
+    && cd /src/sysbox-ipc/sysboxMgrGrpc/sysboxMgrProtobuf && protoc -I . -I /usr/include sysboxMgrProtobuf.proto --go_out=. --go-grpc_out=.
+WORKDIR /src/sysbox-fs
+RUN COMMIT=$(git rev-parse HEAD 2>/dev/null || echo unknown) && \
+    CGO_ENABLED=1 go build -buildvcs=false -trimpath -tags "netgo osusergo" -installsuffix netgo \
+      -ldflags "-extldflags -static -X 'main.edition=Community Edition (CE)' -X main.version=0.7.1-master -X main.commitId=${COMMIT}" \
+      -o /out/sysbox-fs ./cmd/sysbox-fs
+
+FROM scratch
+COPY --from=build /out/sysbox-fs /sysbox-fs

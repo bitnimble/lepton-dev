@@ -1,0 +1,38 @@
+FROM fedora:44
+
+RUN dnf -y install \
+        systemd systemd-container dbus-broker \
+        podman fuse-overlayfs passt slirp4netns catatonit crun \
+        weston \
+        rsync python3 unzip zip attr util-linux procps-ng findutils iproute \
+        zstd jq curl which file sqlite inotify-tools git tar gzip xz \
+        android-tools binutils e2fsprogs openssh-clients \
+    && dnf clean all
+
+RUN useradd -m -u 1000 -s /bin/bash dev \
+    && echo 'dev:10000:55000' > /etc/subuid \
+    && echo 'dev:10000:55000' > /etc/subgid \
+    && mkdir -p /var/lib/systemd/linger \
+    && touch /var/lib/systemd/linger/dev \
+    && chmod u+s /usr/bin/newuidmap /usr/bin/newgidmap
+
+# Sysbox's /dev/kmsg can't be added to journald's event loop (EPERM).
+RUN mkdir -p /etc/systemd/journald.conf.d \
+    && printf '[Journal]\nReadKMsg=no\n' > /etc/systemd/journald.conf.d/no-kmsg.conf \
+    && systemctl mask sys-kernel-config.mount sys-kernel-debug.mount sys-kernel-tracing.mount \
+        systemd-homed.service rtkit-daemon.service
+
+# sysbox-fs denies podman's default ping_group_range sysctl in nested netns.
+RUN mkdir -p /etc/containers && printf '[containers]\ndefault_sysctls = []\n' > /etc/containers/containers.conf
+
+# sysbox-fs returns EIO for these inside nested user namespaces, which breaks fuse-overlayfs.
+RUN mkdir -p /etc/procfix && echo 65534 > /etc/procfix/overflowuid && echo 65534 > /etc/procfix/overflowgid
+RUN printf '%s\n' '[Unit]' 'DefaultDependencies=no' 'Before=local-fs.target' \
+        '[Service]' 'Type=oneshot' 'ExecStart=/usr/bin/mount --make-rshared /' \
+        'ExecStart=/usr/bin/mount --bind /etc/procfix/overflowuid /proc/sys/kernel/overflowuid' \
+        'ExecStart=/usr/bin/mount --bind /etc/procfix/overflowgid /proc/sys/kernel/overflowgid' \
+        '[Install]' 'WantedBy=local-fs.target' > /etc/systemd/system/rshared-root.service \
+    && systemctl enable rshared-root.service
+
+STOPSIGNAL SIGRTMIN+3
+CMD ["/sbin/init"]
