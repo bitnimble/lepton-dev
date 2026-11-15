@@ -7,6 +7,7 @@ RUN dnf -y install \
         rsync python3 unzip zip attr util-linux procps-ng findutils iproute \
         zstd jq curl which file sqlite inotify-tools git tar gzip xz \
         android-tools binutils e2fsprogs openssh-clients \
+        nodejs npm gcc-c++ make \
     && dnf clean all
 
 RUN useradd -m -u 1000 -s /bin/bash dev \
@@ -33,6 +34,12 @@ RUN printf '%s\n' '[Unit]' 'DefaultDependencies=no' 'Before=local-fs.target' \
         'ExecStart=/usr/bin/mount --bind /etc/procfix/overflowgid /proc/sys/kernel/overflowgid' \
         '[Install]' 'WantedBy=local-fs.target' > /etc/systemd/system/rshared-root.service \
     && systemctl enable rshared-root.service
+
+RUN printf '%s\n' '[Unit]' 'After=network-online.target' \
+        'ConditionPathExists=/var/lib/containers/lepton/ws-scrcpy/dist/index.js' \
+        '[Service]' 'ExecStart=/bin/bash /var/lib/containers/lepton/ws-scrcpy.sh' 'Restart=always' 'RestartSec=5' 'TimeoutStopSec=5' \
+        '[Install]' 'WantedBy=multi-user.target' > /etc/systemd/system/ws-scrcpy.service \
+    && systemctl enable ws-scrcpy.service
 
 COPY pipewire-null-sink.conf /etc/pipewire/pipewire.conf.d/lepton-null-sink.conf
 

@@ -10,7 +10,7 @@ Valve's Lepton, Android 14 in podman) on the docker host, without a GPU or Steam
 | `runner/` | Files that run **inside** `lepton-runner`: image (`Containerfile`), env, launch/sysbake/stage scripts |
 | `bin/` | Host-side helpers (run from this dev container via the docker socket) |
 | `host/` | Scripts that ran as **root on the docker host** (via privileged `nsenter`); see Host changes |
-| `patches/` | Rootful patch to the release's `compat_tool/liblepton/liblepton.sh` (`liblepton.sh` is the patched file) |
+| `patches/` | Patches to the release's `compat_tool/liblepton/` (`*.patch`), with the patched `liblepton.sh` and `properties.sh` that `bin/push.sh` installs |
 | `diag/` | Probes used while debugging sysbox/podman/binder |
 | `docs/screens/` | Reference screenshots |
 | `data/` (gitignored) | Release bundle, Google r14 system image, APK/APKM files, sysbox sources/builds, screenshots |
@@ -42,6 +42,9 @@ Runner-level requirements (all in `bin/start-runner.sh` and `runner/Containerfil
 - journald `ReadKMsg=no`, setuid `newuidmap`, rshared `/`, podman `default_sysctls = []`,
   `cgroup_manager = "cgroupfs"` (CI-style `/sys/fs/cgroup/lepton-<ctx>` dirs);
 - `LEPTON_ADB=/usr/bin/adb` (Fedora `android-tools`), `LEPTON_FORCE_SOFTWARE=true` (image ships AMD drivers only);
+- `/dev/dma_heap/system`, owned on the host by uid 165536 (the runner's root; `host/host-dma-heap.sh`):
+  Lepton only enables Codec2 (`debug.stagefright.ccodec=4`) when it can open the heap, and without Codec2
+  Android has no video encoder;
 - a PulseAudio socket for Android's audio HAL: `ensure_audio` runs PipeWire + WirePlumber + `pipewire-pulse`
   as root with a null sink (`runner/pipewire-null-sink.conf`). Without it AudioFlinger blocks 4s per write.
 
@@ -71,6 +74,14 @@ bin/shot.sh <ctx> <name>; bin/tap.sh <ctx> <name> x y [x y…]      # 150ms pres
 bin/burst.sh <ctx> <name> [count] [seconds]                        # screenshot series
 diag/thread-cpu.sh, diag/thread-waits.sh, diag/net-rate.sh, diag/sockets.sh                # hang triage
 ```
+
+### Browser remote control
+
+`http://<docker host>:3459/` serves [ws-scrcpy](https://github.com/NetrisTV/ws-scrcpy) from the runner
+(`ws-scrcpy.service`, `runner/ws-scrcpy.sh`; built once into the volume by `runner/ws-scrcpy-setup.sh`).
+It keeps adb connected to every running session; pick the device, then **Broadway.js** (WebCodecs needs
+HTTPS). Video, touch, keyboard and the nav buttons all go through the one HTTP port ("proxy over adb").
+Encoder Surface input needs `debug.stagefright.c2inputsurface=-1` (`patches/c2-input-surface.patch`).
 
 Steam launches stream `logcat -b all` to `run/<ctx>.logcat.stream` (Lepton's own shutdown capture misses
 early exits).
@@ -123,6 +134,10 @@ TCP 5555 with `ro.adb.secure=0` should let its client connect without pairing.
 Every root command was reviewed first by a no-context subagent for impact on the host and other containers.
 
 - `binder_linux` loaded (kernel marks it `[permanent]`), `/etc/modules-load.d/binder.conf`.
+- `/dev/dma_heap/system` owned by uid 165536 (mode 0600 kept), persisted by
+  `/etc/udev/rules.d/70-lepton-dma-heap.rules` (`host/host-dma-heap.sh`). Any future sysbox container shares
+  that uid mapping and so gets the heap too; system-heap allocations are not charged to the runner's memory
+  cgroup.
 - Sysbox 0.7.1 installed manually (`host/host-stage-sysbox.sh`, `host/host-install-sysbox.sh`), skipping the
   `.deb` postinst (it would add `bip: 172.20.0.1/16`, clashing with the `172.17.0.0/12` pool): binaries in
   `/usr/bin`, units in `/etc/systemd/system`, `sysbox` user + subids `231072:1048576`,

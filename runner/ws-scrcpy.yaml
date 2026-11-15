@@ -1,0 +1,4 @@
+runApplTracker: false
+server:
+  - secure: false
+    port: 3459

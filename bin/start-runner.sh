@@ -6,8 +6,9 @@ BINDER_MAJOR=$(awk '$2 == "binder" {print $1}' /proc/devices)
 docker rm -f lepton-runner >/dev/null 2>&1 || true
 docker run -d --runtime=sysbox-runc --security-opt seccomp=unconfined \
     --name lepton-runner --hostname lepton-runner \
-    --device /dev/fuse --device /dev/net/tun \
+    --device /dev/fuse --device /dev/net/tun --device /dev/dma_heap/system \
     --device-cgroup-rule "c ${BINDER_MAJOR}:* rwm" \
+    -p 3459:3459 \
     -v lepton-runner-home:/home/dev \
     -v lepton-runner-containers:/var/lib/containers \
     lepton-runner:dev

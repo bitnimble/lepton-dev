@@ -1,0 +1,12 @@
+--- a/compat_tool/liblepton/properties.sh	2026-11-13 03:08:17.000000000 +1100
++++ b/compat_tool/liblepton/properties.sh	2026-11-16 10:26:00.377084381 +1100
+@@ -78,6 +78,9 @@
+         # Codec2 allocates linear (audio) buffers from the DMA-BUF system heap,
+         # which setup_podman_mounts passes through when the user can open it.
+         props_echo "debug.stagefright.ccodec=4"
++        # No Codec2 input-surface HAL: any other value makes encoder Surface input
++        # (screen recording, scrcpy) null-deref in CCodec::createInputSurface
++        props_echo "debug.stagefright.c2inputsurface=-1"
+     else
+         props_echo "debug.stagefright.ccodec=0"
+     fi
