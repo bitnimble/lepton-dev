@@ -81,6 +81,8 @@ diag/thread-cpu.sh, diag/thread-waits.sh, diag/net-rate.sh, diag/sockets.sh     
 (`ws-scrcpy.service`, `runner/ws-scrcpy.sh`; built once into the volume by `runner/ws-scrcpy-setup.sh`).
 It keeps adb connected to every running session; pick the device, then **Broadway.js** (WebCodecs needs
 HTTPS). Video, touch, keyboard and the nav buttons all go through the one HTTP port ("proxy over adb").
+Phone browsers get real multi-touch: each browser touch point becomes its own Android pointer (two
+simultaneous CDP touches showed as `P: 2/2` with `settings put system pointer_location 1`).
 Encoder Surface input needs `debug.stagefright.c2inputsurface=-1` (`patches/c2-input-surface.patch`).
 
 Steam launches stream `logcat -b all` to `run/<ctx>.logcat.stream` (Lepton's own shutdown capture misses
