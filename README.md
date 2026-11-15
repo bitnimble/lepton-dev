@@ -41,7 +41,9 @@ Runner-level requirements (all in `bin/start-runner.sh` and `runner/Containerfil
 - a volume at `/var/lib/containers`: overlay upperdirs cannot live on the runner's own overlay root;
 - journald `ReadKMsg=no`, setuid `newuidmap`, rshared `/`, podman `default_sysctls = []`,
   `cgroup_manager = "cgroupfs"` (CI-style `/sys/fs/cgroup/lepton-<ctx>` dirs);
-- `LEPTON_ADB=/usr/bin/adb` (Fedora `android-tools`), `LEPTON_FORCE_SOFTWARE=true` (image ships AMD drivers only).
+- `LEPTON_ADB=/usr/bin/adb` (Fedora `android-tools`), `LEPTON_FORCE_SOFTWARE=true` (image ships AMD drivers only);
+- a PulseAudio socket for Android's audio HAL: `ensure_audio` runs PipeWire + WirePlumber + `pipewire-pulse`
+  as root with a null sink (`runner/pipewire-null-sink.conf`). Without it AudioFlinger blocks 4s per write.
 
 `docker cp` into sysbox containers is unreliable; scripts stream files over `docker exec -i … cat`.
 
@@ -66,7 +68,12 @@ bin/push.sh                              # runner scripts + patched liblepton in
 bin/launch.sh /var/lib/containers/lepton/run/app.apk 30          # fresh `lepton start app.apk`, detached
 bin/status.sh <ctx>; bin/lepton-lines.sh <ctx>; bin/diag.sh <ctx> <package>
 bin/shot.sh <ctx> <name>; bin/tap.sh <ctx> <name> x y [x y…]      # 150ms presses: Unity drops short taps
+bin/burst.sh <ctx> <name> [count] [seconds]                        # screenshot series
+diag/thread-cpu.sh, diag/thread-waits.sh, diag/net-rate.sh, diag/sockets.sh                # hang triage
 ```
+
+Steam launches stream `logcat -b all` to `run/<ctx>.logcat.stream` (Lepton's own shutdown capture misses
+early exits).
 
 `.apkm` bundles need a Steam-style launch (`bin/steamlaunch.sh <appid> <file.apkm> [wait]`, which runs
 `runner/run-steamlaunch-rootful.sh`; context `steamlaunch-<appid>`, verb `waitforexitandrun -- <path>`). A session's container IP is shown by
@@ -81,8 +88,8 @@ Android boots in ~20s with software rendering. Lepton refuses an existing profil
 | --- | --- |
 | Fossify Calculator (x86_64) | Runs; injected taps work (`docs/screens/calculator-input.png`) |
 | AAAAXY 1.8.34 arm64-only | Renders in-game via `libndk_translation` (`docs/screens/aaaaxy-arm64.png`) |
-| Pokémon UNITE 1.25.1.1 (`jp.pokemon.pokemonunite`) | Guest login, trainer name, 8.4 GB asset download on `gapps` (appid 900002, light translator mode) |
-| Mantis Gamepad Pro 3.4.9.1 (`app.mantispro.gamepad`) | Installs/runs (Flutter, arm64); requires Google sign-in, so needs the `gapps` stage |
+| Pokémon UNITE 1.25.1.1 (`jp.pokemon.pokemonunite`) | Guest account, onboarding, lobby with 3D models (`docs/screens/unite-lobby.png`) on `gapps` (appid 900002, light translator mode); bot match returns to the challenge screen after VS |
+| Mantis Gamepad Pro 3.4.9.1 (`app.mantispro.gamepad`) | Runs next to UNITE; "Sign in with Google" opens Play services' add-account form (needs a real account) |
 
 ## Known issues
 
@@ -91,7 +98,13 @@ Android boots in ~20s with software rendering. Lepton refuses an existing profil
   one caught inside `HeavyOptimizeRegion → ResolveJumps → SplitBasicBlock` (`debuggerd -b <pid>`;
   `debuggerd -j` and SIGQUIT are swallowed by CrashSight). `light-translate-or-interpret` works: set
   `LEPTON_NDK_TRANSLATION_MODE` per launch, or write the mode into the game's `baked/lepton-ndk-mode`.
-
+- Apps cannot create `Android/{data,obb}/<pkg>/…` dirs (e.g. `getExternalCacheDir()`): the app's own mkdir
+  hits root-owned dirs, and the `StorageManagerService.mkdirs` fallback canonicalises
+  `/storage/emulated/0` through Lepton's `/data/media/0` symlink to the compatdata path, then rejects it
+  ("Invalid mkdirs path"). Creating the dir runner-side (`external/Android/data/<pkg>/cache`, mode 2700) works.
+- UNITE bot matches show the VS screen, then return to the challenge screen; no new sockets are opened.
+  Unconfirmed: incomplete asset download, or ACE anti-cheat (`libanogs`) refusing the environment.
+- Steam launches occasionally exit within 30s of boot (cause not yet captured; see the logcat stream).
 - Lepton's install hook treats every `pm install` as the game: installing a second app re-runs the game's
   `/data/steam_app` move (harmless "Cross-device link" errors).
 - A portrait-only app (Mantis) rotates the whole display; Unity then loses its surface. Lock landscape:

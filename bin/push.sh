@@ -5,6 +5,7 @@ R="$(cd "$(dirname "$0")/.." && pwd)"
 W=/var/lib/containers/lepton
 put() { docker exec -i lepton-runner sh -c "mkdir -p \"\$(dirname '$2')\" && cat >| '$2' && chmod ${3:-644} '$2'" < "$1"; }
 put "$R/runner/lepton-env.sh" "$W/lepton-env.sh"
+put "$R/runner/pipewire-null-sink.conf" /etc/pipewire/pipewire.conf.d/lepton-null-sink.conf
 for script in setup-rootful run-apk-rootful run-steamlaunch-rootful sysbake-rootful ndk-stage gapps-stage watch; do
     put "$R/runner/$script.sh" "$W/$script.sh" 755
 done

@@ -3,7 +3,7 @@ FROM fedora:44
 RUN dnf -y install \
         systemd systemd-container dbus-broker \
         podman fuse-overlayfs passt slirp4netns catatonit crun \
-        weston \
+        weston pipewire pipewire-pulseaudio wireplumber \
         rsync python3 unzip zip attr util-linux procps-ng findutils iproute \
         zstd jq curl which file sqlite inotify-tools git tar gzip xz \
         android-tools binutils e2fsprogs openssh-clients \
@@ -33,6 +33,8 @@ RUN printf '%s\n' '[Unit]' 'DefaultDependencies=no' 'Before=local-fs.target' \
         'ExecStart=/usr/bin/mount --bind /etc/procfix/overflowgid /proc/sys/kernel/overflowgid' \
         '[Install]' 'WantedBy=local-fs.target' > /etc/systemd/system/rshared-root.service \
     && systemctl enable rshared-root.service
+
+COPY pipewire-null-sink.conf /etc/pipewire/pipewire.conf.d/lepton-null-sink.conf
 
 STOPSIGNAL SIGRTMIN+3
 CMD ["/sbin/init"]

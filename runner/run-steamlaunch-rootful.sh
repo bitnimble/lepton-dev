@@ -28,6 +28,7 @@ for _ in $(seq 900); do
     sleep 1
 done
 grep -q "Boot complete!" "$LOG" || { echo "boot timeout"; tail -40 "$LOG"; exit 1; }
+podman exec "lepton-$CTX" /system/bin/logcat -b all >| "$W/run/$CTX.logcat.stream" 2>&1 &
 echo "booted; waiting ${WAIT}s for app"
 sleep "$WAIT"
 
