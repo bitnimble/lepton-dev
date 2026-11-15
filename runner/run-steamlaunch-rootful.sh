@@ -11,7 +11,8 @@ export SteamAppId="$APPID"
 export STEAM_COMPAT_INSTALL_PATH="$(dirname "$GAME")"
 export STEAM_COMPAT_DATA_PATH="$W/steam/compatdata/$APPID"
 export STEAM_COMPAT_SHADER_PATH="$W/steam/shadercache/$APPID"
-export STEAM_COMPAT_LIBRARY_PATHS="$STEAM_COMPAT_INSTALL_PATH"
+# Steam includes the library root holding compatdata/; /data/media/0 links into it
+export STEAM_COMPAT_LIBRARY_PATHS="$STEAM_COMPAT_INSTALL_PATH:$W/steam"
 mkdir -p "$STEAM_COMPAT_DATA_PATH" "$STEAM_COMPAT_SHADER_PATH"
 
 ensure_display

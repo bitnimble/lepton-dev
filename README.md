@@ -92,8 +92,6 @@ Android boots in ~20s with software rendering. Lepton refuses an existing profil
   `debuggerd -j` and SIGQUIT are swallowed by CrashSight). `light-translate-or-interpret` works: set
   `LEPTON_NDK_TRANSLATION_MODE` per launch, or write the mode into the game's `baked/lepton-ndk-mode`.
 
-- `/data/media/0` symlinks to a host compatdata path not visible in the container: OBB links and
-  `/storage/emulated/0` fail (`vold: Failed to find mounted volume`).
 - Lepton's install hook treats every `pm install` as the game: installing a second app re-runs the game's
   `/data/steam_app` move (harmless "Cross-device link" errors).
 - A portrait-only app (Mantis) rotates the whole display; Unity then loses its surface. Lock landscape:
