@@ -1,5 +1,5 @@
 #!/bin/bash
-# Runs as root inside lepton-runner: packages the installable Lepton + Mantis bundle (the GApps + NDK stage,
+# Runs as root inside lepton-runner: packages the installable Lepton + Padmap bundle (the GApps + NDK stage,
 # the add-on and the patched Steam entry) with lepton-customize. Output: $W/deck-dist/lepton-x86_64-<id>.*
 # Usage: build-deck-bundle.sh <bundle-id>
 set -euo pipefail
@@ -21,10 +21,8 @@ as_dev cp -a "$WORK/gapps-stage" "$STAGE"
 T="$STAGE/compat_tool"
 install -o dev -g dev -m 755 "$W/patches/lepton-x86_64-entry" "$T/lepton-x86_64-entry"
 as_dev git -C "$STAGE" apply "$W/patches/c2-input-surface.patch"
-install -d -o dev -g dev "$T/lepton-mantis"
-cp -a "$W/addon/." "$T/lepton-mantis/"
-cp "$W/inputs/mantis-3.4.9.1.apkm" "$T/lepton-mantis/mantis.apkm"
-chown -R dev:dev "$T/lepton-mantis"
+cp -a "$W/addon" "$T/lepton-padmap"
+chown -R dev:dev "$T/lepton-padmap"
 
 bash "$W/sysbake-rootful.sh" "$STAGE" "$BAKE"
 mkdir "$PREBAKED"
@@ -37,6 +35,6 @@ unreadable="$(find "$PREBAKED" ! -perm -u+r | head -n 5)"
 as_dev python3 "$W/deck-record-sysbake.py" "$STAGE" "$PREBAKED"
 install -d -o dev -g dev "$OUT"
 as_dev "$T/tools/lepton-customize" package --execute --stage-dir "$STAGE" --output-dir "$OUT" \
-    --bundle-id "$ID" --tool-id lepton_mantis --tool-name "Lepton + Mantis (GApps, ARM64) - $ID"
+    --bundle-id "$ID" --tool-id lepton_padmap --tool-name "Lepton + Padmap (GApps, ARM64) - $ID"
 rm -rf "$STAGE" "$PREBAKED"
 ls -la "$OUT"/lepton-x86_64-"$ID".*

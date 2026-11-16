@@ -168,13 +168,13 @@ index 4043387..7dca4c9 100644
              elements.push(screenshot);
          }
  
-+        const mantis = new ToolBoxButton('Open Mantis', SvgImage.Icon.GAMEPAD);
-+        mantis.addEventListener('click', () => {
++        const editControls = new ToolBoxButton('Edit controls', SvgImage.Icon.GAMEPAD);
++        editControls.addEventListener('click', () => {
 +            const url = new URL('lepton/launch', location.href);
-+            url.search = new URLSearchParams({ udid, app: 'mantis' }).toString();
-+            fetch(url.toString(), { method: 'POST' }).catch((error) => console.error('Open Mantis', error));
++            url.search = new URLSearchParams({ udid, app: 'padmap' }).toString();
++            fetch(url.toString(), { method: 'POST' }).catch((error) => console.error('Edit controls', error));
 +        });
-+        elements.push(mantis);
++        elements.push(editControls);
 +
          const fullscreen = new ToolBoxButton('Fullscreen Mode', SvgImage.Icon.FULL_SCREEN);
          fullscreen.addEventListener('click', () => {
@@ -238,8 +238,8 @@ index f941dfc..852304b 100644
  
  const PATHNAME = process.env[EnvName.WS_SCRCPY_PATHNAME] || __PATHNAME__;
  
-+const LAUNCHABLE_ACTIVITIES: Record<string, string> = {
-+    mantis: 'app.mantispro.gamepad/.MainActivity',
++const LAUNCH_COMMANDS: Record<string, string[]> = {
++    padmap: ['am', 'start-foreground-service', '-n', 'app.padmap/.ui.OverlayService', '--ez', 'edit', 'true'],
 +};
 +
  export type ServerAndPort = {
@@ -251,12 +251,12 @@ index f941dfc..852304b 100644
          }
 +        this.mainApp.post(path.posix.join(PATHNAME, 'lepton/launch'), (req, res) => {
 +            const udid = req.query.udid;
-+            const activity = LAUNCHABLE_ACTIVITIES[String(req.query.app)];
-+            if (typeof udid !== 'string' || !activity) {
++            const command = LAUNCH_COMMANDS[String(req.query.app)];
++            if (typeof udid !== 'string' || !command) {
 +                res.sendStatus(400);
 +                return;
 +            }
-+            execFile('adb', ['-s', udid, 'shell', 'am', 'start', '-n', activity], (error, stdout, stderr) => {
++            execFile('adb', ['-s', udid, 'shell', ...command], (error, stdout, stderr) => {
 +                if (error) {
 +                    res.status(500).send(stderr || error.message);
 +                    return;

@@ -1,0 +1,201 @@
+#!/usr/bin/env bash
+# Lepton + Padmap host-side helper; runs wherever Lepton's podman containers live (Steam Deck or lepton-runner).
+#   lepton-padmap session             per-launch watcher (started by entry-hook.sh)
+#   lepton-padmap install CONTEXT     install and start Padmap in a running context
+#   lepton-padmap edit CONTEXT        open Padmap's layout editor over the game
+#   lepton-padmap report              bundle recent logs into ~/Desktop/lepton-report-*.tar.gz
+# A context is "steamlaunch-<Steam AppID>" (see `lepton ps`). Set LEPTON_PADMAP=0 in a game's launch options to
+# skip Padmap. Layouts: ~/.config/padmap/layouts/<package>.json, kept in sync with the game's Android storage.
+set -uo pipefail
+ADDON="$(cd -- "$(dirname -- "$(realpath -e -- "${BASH_SOURCE[0]}")")" && pwd -P)"
+LOGS="${LEPTON_LOG_DIR:-$HOME/lepton-logs}"
+LAYOUTS="${XDG_CONFIG_HOME:-$HOME/.config}/padmap/layouts"
+GUEST_LAYOUTS=/sdcard/Padmap
+GUEST_APK=/data/local/tmp/padmap.apk
+KEEP_SESSIONS=20
+MAX_START_FAILS=5
+C=""
+FAILS=0
+
+log() { printf '%(%F %T)T %s\n' -1 "$*"; }
+guest() { podman exec "$C" "$@"; }
+running() { [[ "$(podman container inspect -f '{{.State.Running}}' "$C" 2>/dev/null)" == true ]]; }
+booted() { [[ "$(guest getprop sys.boot_completed 2>/dev/null)" == 1 ]]; }
+padmap_running() { guest pidof padmap >/dev/null 2>&1; }
+
+wait_for() {
+    local seconds="$1" i
+    shift
+    for ((i = 0; i < seconds; i += 2)); do
+        "$@" && return 0
+        sleep 2
+    done
+    return 1
+}
+
+main() {
+    case "${1:-}" in
+    session) session ;;
+    install) C="lepton-${2:?context}"; install_padmap && start_padmap ;;
+    edit) C="lepton-${2:?context}"; guest am start-foreground-service -n app.padmap/.ui.OverlayService --ez edit true ;;
+    report) report ;;
+    *) sed -n '2,9p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2 ;;
+    esac
+}
+
+session() {
+    DIR="${LEPTON_SESSION_DIR:?}"
+    DATA="${STEAM_COMPAT_DATA_PATH:-/nonexistent}/baked/data_overlay"
+    SYNCED="$DIR/.layouts-synced"
+    STARTED="$(date +%s)"
+    C="lepton-steamlaunch-${SteamAppId:?}"
+    exec >>"$DIR/session.log" 2>&1
+    log "watching $C (add-on $ADDON, $(cat "$ADDON/padmap/VERSION" 2>/dev/null))"
+    # Steam's reaper ends this with the game, so crash files are collected as they appear, not only at the end.
+    trap 'collect; log "stopped"; exit 0' TERM INT
+    wait_for 600 running || { log "container never started; see lepton.log"; exit 0; }
+    wait_for 600 booted || { log "Android didn't finish booting; see lepton.log"; collect; exit 0; }
+    log "Android booted"
+    guest logcat -b all -v threadtime >"$DIR/logcat.txt" 2>&1 &
+    local padmap="${LEPTON_PADMAP:-1}" tick=0
+    if [[ "$padmap" == 0 ]]; then
+        log "Padmap disabled (LEPTON_PADMAP=0)"
+    else
+        install_padmap
+        seed_layouts
+    fi
+    while running; do
+        if [[ "$padmap" != 0 ]]; then
+            padmap_keepalive
+            sync_layouts
+        fi
+        ((tick++ % 6)) || collect
+        sleep 5
+    done
+    collect
+    log "session ended"
+    prune
+}
+
+install_padmap() {
+    podman exec -i "$C" sh -c "cat > $GUEST_APK.new" <"$ADDON/padmap/padmap.apk"
+    if guest cmp -s "$GUEST_APK.new" "$GUEST_APK" && guest cmd_real package path app.padmap >/dev/null 2>&1; then
+        guest rm "$GUEST_APK.new"
+        return 0
+    fi
+    log "installing Padmap"
+    guest mv "$GUEST_APK.new" "$GUEST_APK"
+    # cmd_real, not pm: Lepton's cmd wrapper treats every install as the game and moves the game's APKs away
+    guest cmd_real package install -r "$GUEST_APK" </dev/null
+}
+
+start_padmap() {
+    {
+        # podman exec lacks init's service environment; without BOOTCLASSPATH app_process exits silently
+        echo 'for kv in $(tr "\0" "\n" </proc/$(pidof -s adbd)/environ); do case "$kv" in ANDROID_* | *CLASSPATH=*) export "$kv" ;; esac; done'
+        cat "$ADDON/padmap/start.sh"
+    } | podman exec -i "$C" sh -s
+}
+
+padmap_keepalive() {
+    if padmap_running; then
+        FAILS=0
+        return 0
+    fi
+    ((FAILS < MAX_START_FAILS)) || return 0
+    log "starting Padmap"
+    if start_padmap; then
+        FAILS=0
+    else
+        FAILS=$((FAILS + 1))
+        log "Padmap didn't start ($FAILS/$MAX_START_FAILS); logcat.txt has its Padmap lines"
+    fi
+}
+
+# The host copy (~/.config/padmap/layouts) is canonical at launch; afterwards whichever side changed since the
+# last sync wins, guest (the editor) first.
+seed_layouts() {
+    local file name
+    mkdir -p "$LAYOUTS" "$SYNCED"
+    for file in "$ADDON"/padmap/layouts/*.json; do
+        name="$(basename "$file")"
+        [[ -e "$LAYOUTS/$name" ]] || cp "$file" "$LAYOUTS/$name"
+    done
+    guest mkdir -p "$GUEST_LAYOUTS"
+    for file in "$LAYOUTS"/*.json; do
+        [[ -f "$file" ]] || continue
+        push_layout "$(basename "$file")"
+    done
+}
+
+sync_layouts() {
+    local hash name file
+    while read -r hash name; do
+        [[ -n "$name" && "$hash" != "$(md5 "$SYNCED/$name")" ]] || continue
+        guest cat "$GUEST_LAYOUTS/$name" >"$LAYOUTS/$name.tmp" && mv "$LAYOUTS/$name.tmp" "$LAYOUTS/$name"
+        cp "$LAYOUTS/$name" "$SYNCED/$name"
+        log "layout $name saved from the editor to $LAYOUTS"
+    done < <(guest sh -c "cd $GUEST_LAYOUTS 2>/dev/null && for f in *.json; do [ -f \"\$f\" ] && md5sum \"\$f\"; done")
+    for file in "$LAYOUTS"/*.json; do
+        [[ -f "$file" ]] || continue
+        name="$(basename "$file")"
+        [[ "$(md5 "$file")" != "$(md5 "$SYNCED/$name")" ]] || continue
+        push_layout "$name"
+        log "layout $name pushed from $LAYOUTS"
+    done
+}
+
+push_layout() {
+    podman exec -i "$C" sh -c "cat > '$GUEST_LAYOUTS/$1'" <"$LAYOUTS/$1"
+    cp "$LAYOUTS/$1" "$SYNCED/$1"
+}
+
+md5() { [[ -f "$1" ]] && md5sum <"$1" | cut -d' ' -f1; }
+
+collect() {
+    local sub
+    for sub in tombstones anr system/dropbox; do
+        [[ -d "$DATA/$sub" ]] || continue
+        mkdir -p "$DIR/$sub"
+        # Android's files belong to the container's user namespace; unreadable ones need podman unshare.
+        find "$DATA/$sub" -maxdepth 1 -type f -newermt "@$STARTED" -exec cp -pu -t "$DIR/$sub" {} + 2>/dev/null ||
+            podman unshare find "$DATA/$sub" -maxdepth 1 -type f -newermt "@$STARTED" \
+                -exec cp -pu -t "$DIR/$sub" {} + 2>/dev/null || true
+    done
+    find "$DIR" -mindepth 1 -type d -empty -delete 2>/dev/null
+}
+
+prune() {
+    local old
+    while IFS= read -r old; do
+        rm -rf -- "$old"
+    done < <(ls -1dt "$LOGS"/*-*/ 2>/dev/null | tail -n +$((KEEP_SESSIONS + 1)))
+}
+
+report() {
+    local out="$HOME/Desktop" name tmp session
+    [[ -d "$out" ]] || out="$HOME"
+    name="lepton-report-$(date +%Y%m%d-%H%M%S)"
+    tmp="$(mktemp -d)"
+    mkdir -p "$tmp/$name/sessions" "$tmp/$name/lepton-logcats" "$tmp/$name/layouts"
+    {
+        echo "== date"; date
+        echo "== host"; cat /etc/os-release; uname -a
+        echo "== add-on"; echo "$ADDON"; cat "$ADDON/padmap/VERSION" "$ADDON/../../BUNDLE.json"
+        echo "== podman"; podman --version; podman ps -a --format '{{.Names}} {{.Status}}'
+        echo "== resources"; df -h "$HOME"; free -h
+    } >"$tmp/$name/system.txt" 2>&1
+    while IFS= read -r session; do
+        cp -r "$session" "$tmp/$name/sessions/"
+    done < <(ls -1dt "$LOGS"/*-*/ 2>/dev/null | head -n 5)
+    cp -r "$HOME/.steam/steam/logs/lepton-logcats/." "$tmp/$name/lepton-logcats/" 2>/dev/null
+    cp "$LAYOUTS"/*.json "$tmp/$name/layouts/" 2>/dev/null
+    tar -C "$tmp" -czf "$out/$name.tar.gz" "$name"
+    rm -rf "$tmp"
+    echo "Report saved: $out/$name.tar.gz"
+    if command -v zenity >/dev/null 2>&1 && [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
+        zenity --info --title='Lepton' --no-markup --text="Report saved:\n$out/$name.tar.gz" 2>/dev/null || true
+    fi
+}
+
+main "$@"

@@ -1,16 +1,15 @@
 #!/bin/bash
-# Host-side: builds the Lepton + Mantis Steam Deck bundle in lepton-runner into data/deck-dist/<id>/
+# Host-side: builds the Lepton + Padmap Steam Deck bundle in lepton-runner into data/deck-dist/<id>/
 # (bundle, checksum, Lepton's installer), for the Deck checkout's bundle/.
-# Usage: build-deck-bundle.sh [bundle-id]   (default mantis-<UTC date>-<time>)
+# Usage: build-deck-bundle.sh [bundle-id]   (default padmap-<UTC date>-<time>)
 set -euo pipefail
 R="$(cd "$(dirname "$0")/.." && pwd)"
 W=/var/lib/containers/lepton
-ID="${1:-mantis-$(date -u +%Y%m%d-%H%M)}"
+ID="${1:-padmap-$(date -u +%Y%m%d-%H%M)}"
 [[ "$ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { echo "bundle id must be [A-Za-z0-9._-]: $ID" >&2; exit 1; }
 OUT="$R/data/deck-dist/$ID"
 [[ ! -e "$OUT" ]] || { echo "already built: $OUT" >&2; exit 1; }
 
-bash "$R/mantis-buddy/host/build.sh" >/dev/null
 bash "$R/bin/push-inputs.sh" >/dev/null
 bash "$R/bin/push.sh" >/dev/null
 docker exec lepton-runner bash "$W/build-deck-bundle.sh" "$ID"

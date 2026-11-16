@@ -55,8 +55,8 @@ Select a Lepton GApps tool in the game's Properties > Compatibility."
     exit 1
 fi
 
-if [[ "${1:-}" == waitforexitandrun && -f "$TOOL/lepton-mantis/entry-hook.sh" ]]; then
-    source "$TOOL/lepton-mantis/entry-hook.sh"
+if [[ "${1:-}" == waitforexitandrun && -f "$TOOL/lepton-padmap/entry-hook.sh" ]]; then
+    source "$TOOL/lepton-padmap/entry-hook.sh"
 fi
 
 if [[ "${1:-}" == waitforexitandrun && "${LEPTON_NO_BRIDGE:-false}" != true ]] && ! inside_bridge; then

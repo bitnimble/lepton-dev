@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=Install / update Lepton + Mantis
+Name=Install / update Lepton + Padmap
 Comment=git pull this checkout, then install the newest bundle in bundle/ and the add-on
 Exec=bash -c 'exec konsole -e bash "$(dirname "$1")/update.sh" --pause' _ %k
 Icon=system-software-install
