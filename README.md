@@ -158,8 +158,11 @@ Android boots in ~20s with software rendering. Lepton refuses an existing profil
 The patched Steam entry (`patches/entry-hook.patch`) sources `entry-hook.sh` on `waitforexitandrun`, so it
 runs for Steam launches and for Lepton's "Add Google game" steps alike. Per launch it makes
 `~/lepton-logs/<appid>-<date>-<time>/` (`latest` symlink, last 20 kept), tees the entry's output into
-`lepton.log`, picks the NDK translation mode from `ndk-modes` by the `.apkm`'s package (unless already set), and
-starts `lepton-padmap session` detached. The session waits for boot, streams `logcat -b all` to `logcat-NNN` (32 MB parts, newest four kept),
+`lepton.log`, picks the NDK translation mode from `ndk-modes` by the `.apkm`'s package (unless already set),
+puts a copy of `/usr/bin/gamescope` without file capabilities (`~/.cache/lepton-padmap/bin/`) first on `PATH`, and
+starts `lepton-padmap session` detached. The copy is for Steam's performance overlay: `mangoapp` reads the game
+window's `/proc/<pid>/fdinfo`, which for Lepton's nested gamescope with SteamOS's `cap_sys_nice` is unreadable, and
+it aborts on that in a loop (each core dump freezes the game for about a second) until systemd stops restarting it. The session waits for boot, streams `logcat -b all` to `logcat-NNN` (32 MB parts, newest four kept),
 installs Padmap with `cmd_real`, pushes the host's layouts (`~/.config/padmap/layouts/`, seeded from
 `addon/padmap/layouts/`) into Android's `/sdcard/Padmap/`, then every 5s (re)starts Padmap's daemon as root
 (Padmap's own `start.sh`, with adbd's environment; 5 failed starts max), syncs layouts both ways (editor saves
