@@ -53,6 +53,10 @@ Padmap starts with every launch and maps the controller through the game's layou
 For example, an aim skill on L1 aimed with the right stick: **+ Aim**, drag it onto the skill, press **L1**, push
 the **right stick**, **Close**.
 
+While Padmap maps a game, the game's vibrations rumble the Deck (Steam's controller settings for the game must
+allow rumble). `session.log`'s Padmap lines say `rumble: ... has N motor(s)`; 0 means Steam's virtual controller
+didn't offer rumble to Android.
+
 Pokémon UNITE comes with a starting layout: left stick moves, A attacks, R1 / R2 / L2 are Move 1 / Move 2 / the
 Unite Move aimed with the right stick, X uses the battle item, Y recalls. Its positions are approximate, so
 check them in the editor in your first match.
