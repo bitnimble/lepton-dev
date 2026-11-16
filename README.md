@@ -134,27 +134,31 @@ Android boots in ~20s with software rendering. Lepton refuses an existing profil
 
 ## Mantis buddy
 
-Mantis needs a privileged helper daemon (MantisBuddy) to inject touches; its native lib `libmantis.so` is
-**ARM64-only** and injects via `/dev/uinput` (confirmed in the lib). Two facts shape the port to Lepton (x86
-+ ARM translation, the same as a Steam Deck):
+Mantis needs a privileged helper daemon (MantisBuddy, `app.mantispro.injector.injection.InjectServiceKt` in
+the bundle's `mantis.dex`, control port 9999). Its native lib `libmantis.so` is **ARM64-only**. Upstream runs
+it under `app_process` as shell/root, which on x86 is native x86_64 and never gets the native bridge
+(`dlopen` fails `EM_AARCH64 instead of EM_X86_64`); a plain arm64 app gets the bridge but has a real app
+uid, so privileged calls fail (`INJECT_EVENTS`).
 
-- ARM64 native code only runs in a native-bridge **app** process; privileged processes (`app_process`, shell,
-  root) are native x86_64 and `dlopen` of the ARM64 lib fails `EM_AARCH64 instead of EM_X86_64`. On a real ARM
-  phone there's no conflict because privileged processes are ARM64 there.
-- Injection needs `/dev/uinput`, which doesn't exist in the container; `ueventd` is disabled (so a created
-  virtual device gets no `/dev/input/eventN` node); SELinux is **disabled** (so DAC is the only gate).
-
-Mantis is signed in and its buddy bundle is installed via the APK's documented PC-activation path
+Activation: Mantis is signed in and its bundle installed via the APK's documented PC-activation path
 (`adb shell su 0 sh /sdcard/Android/data/app.mantispro.gamepad/files/buddyNew.sh`; the one-time enrollment
-credential it consumes is backed up at `/root/mantis-enrollment.bak` in the runner).
+credential it consumes is backed up at `/root/mantis-enrollment.bak` in the runner). Its own launcher then
+fails (the `app_process` problem above).
 
-`mantis-buddy/abitest/` proves the ARM64 blocker is solvable: an ARM64-flagged apk (forced by an embedded
-`lib/arm64-v8a/*.so`) gets the translator in its process and `System.load`s `libmantis.so` (`LOAD_OK`). The
-daemon can therefore run hosted in such an apk. Remaining, once `/dev/uinput` is passed through
-(`host/host-uinput.sh`, reviewed): a `liblepton` patch to pass the device + major 10/13 device-cgroup rules
-into Android, `chmod 666 /dev/uinput`, host the real `mantis.dex`/`libmantis.so` in an ARM64 apk, `mknod` the
-virtual device's `eventN` into `/dev/input` for EventHub, then the Mantis app ↔ buddy localhost handshake and
-a gamepad source (the Deck's own controller supplies this on real hardware).
+`bin/mantis-buddy.sh [ctx]` starts the daemon instead: it installs `data/mantis-buddy/host.apk`
+(`mantis-buddy/host/build.sh`) and runs `mantis-buddy/start-buddy.sh` in the guest, which does
+`am instrument --abi arm64-v8a --no-hidden-api-checks lepton.mantisbuddy/.BuddyHost` as root. That forks
+`com.android.DeviceAsWebcam` (uid 1000, so `primaryCpuAbi` is non-null and the ABI override applies) with the
+aarch64 translator. Debuggable builds let a root caller skip the instrumentation signature check, and an
+instrumented process gets its source uid's (root's) permissions. `BuddyHost` loads `mantis.dex` with a
+boot-parent `DexClassLoader` (the target apk bundles a clashing kotlin), a library path containing
+`/lib/arm` (ndk_translation's test for bridging a namespace), and sets `java.class.path` through
+`System.unchangeableProps`, which the daemon reads to find its bundle. The Mantis app then shows
+"Mantis Buddy Connected".
+
+Touch injection still needs input devices: the daemon's "empusa" mode makes a uinput touchscreen
+(`Empusa Virtual Touchscreen`) and reads gamepads straight from `/dev/input/event*`, and `ueventd` is disabled,
+so new `eventN` nodes must be exposed to Android explicitly.
 
 Mantis also ships its own ADB client (`libmantis_adb_crypto.so`) for Wi-Fi-debugging activation; the
 PC-activation path above avoids needing it.
@@ -168,6 +172,9 @@ Every root command was reviewed first by a no-context subagent for impact on the
   `/etc/udev/rules.d/70-lepton-dma-heap.rules` (`host/host-dma-heap.sh`). Any future sysbox container shares
   that uid mapping and so gets the heap too; system-heap allocations are not charged to the runner's memory
   cgroup.
+- `uinput` loaded (`/etc/modules-load.d/lepton-uinput.conf`), `/dev/uinput` owned by uid 165536 (mode 0600
+  kept), persisted by `/etc/udev/rules.d/70-lepton-uinput.rules` (`host/host-uinput.sh`). Whoever opens it can
+  create virtual input devices on the host; this host is headless.
 - Sysbox 0.7.1 installed manually (`host/host-stage-sysbox.sh`, `host/host-install-sysbox.sh`), skipping the
   `.deb` postinst (it would add `bip: 172.20.0.1/16`, clashing with the `172.17.0.0/12` pool): binaries in
   `/usr/bin`, units in `/etc/systemd/system`, `sysbox` user + subids `231072:1048576`,
