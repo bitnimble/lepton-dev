@@ -12,7 +12,7 @@ touch mapping ([deck/README.md](deck/README.md)).
 | `runner/` | Files that run **inside** `lepton-runner`: image (`Containerfile`), env, launch/sysbake/stage/bundle scripts |
 | `bin/` | Host-side helpers (run from this dev container via the docker socket) |
 | `host/` | Scripts that ran as **root on the docker host** (via privileged `nsenter`); see Host changes |
-| `addon/` | The Lepton + Padmap add-on, shipped as a bundle's `compat_tool/lepton-padmap/`; `addon/padmap/` is Padmap's APK, start script and layouts, vendored by `bin/update-padmap.sh` from the [padmap](../padmap) repo |
+| `addon/` | The Lepton + Padmap add-on, shipped as a bundle's `compat_tool/lepton-padmap/`; `addon/padmap/` is Padmap's APK, start script and layouts, vendored by `bin/update-padmap.sh` from [bitnimble/padmap](https://github.com/bitnimble/padmap) (checked out next to this repo) |
 | `deck/` | Deck-side installer/updater and user guide; the Deck runs them from a clone of this repo |
 | `bundle/` (gitignored) | On the Deck: Android bundles copied from `data/deck-dist/<id>/` |
 | `patches/` | Patches to the release's `compat_tool/` (`*.patch`), with the patched `liblepton.sh`, `properties.sh` and `lepton-x86_64-entry` that `bin/push.sh` installs |

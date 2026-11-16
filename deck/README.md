@@ -7,7 +7,7 @@ your own system image; personal use only); this checkout holds the installer and
 
 ## Install
 
-1. Desktop Mode, Konsole: `git clone <this repo> ~/lepton-dev`.
+1. Desktop Mode, Konsole: `git clone https://github.com/bitnimble/lepton-dev ~/lepton-dev`.
 2. Copy a bundle into `~/lepton-dev/bundle/` (about 900 MB). From the build machine, with SSH enabled on the
    Deck (`passwd`, then `sudo systemctl start sshd`):
    `scp data/deck-dist/<id>/* deck@steamdeck:lepton-dev/bundle/`
