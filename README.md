@@ -134,10 +134,30 @@ Android boots in ~20s with software rendering. Lepton refuses an existing profil
 
 ## Mantis buddy
 
-Mantis ships its own ADB client (`libmantis_adb_crypto.so`) and an activation module
-(`app.mantispro.gamepad.activation`: bundle installer, launch coordinator, handshake). It pushes a buddy
-bundle under `/data/local/tmp` and starts it from a `#!/system/bin/sh` bootstrap over adb. Lepton's adbd on
-TCP 5555 with `ro.adb.secure=0` should let its client connect without pairing.
+Mantis needs a privileged helper daemon (MantisBuddy) to inject touches; its native lib `libmantis.so` is
+**ARM64-only** and injects via `/dev/uinput` (confirmed in the lib). Two facts shape the port to Lepton (x86
++ ARM translation, the same as a Steam Deck):
+
+- ARM64 native code only runs in a native-bridge **app** process; privileged processes (`app_process`, shell,
+  root) are native x86_64 and `dlopen` of the ARM64 lib fails `EM_AARCH64 instead of EM_X86_64`. On a real ARM
+  phone there's no conflict because privileged processes are ARM64 there.
+- Injection needs `/dev/uinput`, which doesn't exist in the container; `ueventd` is disabled (so a created
+  virtual device gets no `/dev/input/eventN` node); SELinux is **disabled** (so DAC is the only gate).
+
+Mantis is signed in and its buddy bundle is installed via the APK's documented PC-activation path
+(`adb shell su 0 sh /sdcard/Android/data/app.mantispro.gamepad/files/buddyNew.sh`; the one-time enrollment
+credential it consumes is backed up at `/root/mantis-enrollment.bak` in the runner).
+
+`mantis-buddy/abitest/` proves the ARM64 blocker is solvable: an ARM64-flagged apk (forced by an embedded
+`lib/arm64-v8a/*.so`) gets the translator in its process and `System.load`s `libmantis.so` (`LOAD_OK`). The
+daemon can therefore run hosted in such an apk. Remaining, once `/dev/uinput` is passed through
+(`host/host-uinput.sh`, reviewed): a `liblepton` patch to pass the device + major 10/13 device-cgroup rules
+into Android, `chmod 666 /dev/uinput`, host the real `mantis.dex`/`libmantis.so` in an ARM64 apk, `mknod` the
+virtual device's `eventN` into `/dev/input` for EventHub, then the Mantis app ↔ buddy localhost handshake and
+a gamepad source (the Deck's own controller supplies this on real hardware).
+
+Mantis also ships its own ADB client (`libmantis_adb_crypto.so`) for Wi-Fi-debugging activation; the
+PC-activation path above avoids needing it.
 
 ## Host changes (docker host, root)
 
