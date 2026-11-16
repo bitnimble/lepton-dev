@@ -8,8 +8,10 @@ put "$R/runner/lepton-env.sh" "$W/lepton-env.sh"
 put "$R/runner/pipewire-null-sink.conf" /etc/pipewire/pipewire.conf.d/lepton-null-sink.conf
 put "$R/runner/ws-scrcpy.yaml" "$W/ws-scrcpy.yaml"
 put "$R/runner/ws-scrcpy-lepton.patch" "$W/ws-scrcpy-lepton.patch"
+put "$R/runner/vpad.c" "$W/vpad.c"
+put "$R/mantis-buddy/start-buddy.sh" "$W/mantis-start-buddy.sh"
 for script in setup-rootful run-apk-rootful run-steamlaunch-rootful sysbake-rootful ndk-stage gapps-stage watch \
-    ws-scrcpy ws-scrcpy-setup; do
+    ws-scrcpy ws-scrcpy-setup vpad; do
     put "$R/runner/$script.sh" "$W/$script.sh" 755
 done
 for stage in stage ndk gapps; do

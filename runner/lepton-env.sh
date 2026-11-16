@@ -4,7 +4,6 @@ export HOME="$W/home"
 export XDG_RUNTIME_DIR=/run/user/0
 export LEPTON_FORCE_SOFTWARE=true
 export APP_WANTS_FLATSCREEN=true
-export LEPTON_GAMEPAD_PASSTHROUGH=false
 export TERM=dumb
 export LEPTON_ADB=/usr/bin/adb
 STAGE="${LEPTON_STAGE:-$W/stage}"

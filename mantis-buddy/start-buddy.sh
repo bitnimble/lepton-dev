@@ -15,8 +15,6 @@ if [ ! -f "$M/bundles/$BUNDLE/mantis.dex" ]; then
 fi
 [ -f "$M/bundles/$BUNDLE/mantis.dex" ] || { echo "no Mantis bundle in $M/bundles; activate Mantis once first" >&2; exit 1; }
 
-[ -c /dev/uinput ] && chmod 666 /dev/uinput
-
 # podman exec lacks init's service environment; without BOOTCLASSPATH, `am instrument` (an app_process) exits silently
 for kv in $(tr '\0' '\n' </proc/"$(pidof -s adbd)"/environ); do
     case "$kv" in ANDROID_* | *CLASSPATH=*) export "$kv" ;; esac

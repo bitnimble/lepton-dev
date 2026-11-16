@@ -31,10 +31,15 @@ public class BuddyHost extends Instrumentation {
             field.setAccessible(true);
             ((Properties) field.get(null)).setProperty("java.class.path", dex);
             System.setProperty("mantis.operation", operation);
-            // Boot parent: the target apk bundles its own, incompatible kotlin.
             // ndk_translation only bridges a namespace whose search path contains "/lib/arm"; the entry needn't exist.
             String libraryPath = bundleDir + ":/system/lib/arm64";
-            ClassLoader loader = new DexClassLoader(dex, null, libraryPath, ClassLoader.getSystemClassLoader().getParent());
+            ClassLoader system = ClassLoader.getSystemClassLoader();
+            // Boot parent: the target apk bundles its own, incompatible kotlin.
+            ClassLoader loader = new DexClassLoader(dex, null, libraryPath, system.getParent());
+            // JNI FindClass on the daemon's native threads resolves through the system loader, as under app_process.
+            Field parent = ClassLoader.class.getDeclaredField("parent");
+            parent.setAccessible(true);
+            parent.set(system, loader);
             Log.i(TAG, "starting " + dex);
             loader.loadClass(INJECT_SERVICE).getMethod("main", String[].class).invoke(null, (Object) new String[0]);
             Log.w(TAG, "daemon returned");

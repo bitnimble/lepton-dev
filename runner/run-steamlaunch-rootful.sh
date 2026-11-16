@@ -29,6 +29,9 @@ for _ in $(seq 900); do
 done
 grep -q "Boot complete!" "$LOG" || { echo "boot timeout"; tail -40 "$LOG"; exit 1; }
 podman exec "lepton-$CTX" /system/bin/logcat -b all >| "$W/run/$CTX.logcat.stream" 2>&1 &
+if podman exec "lepton-$CTX" cmd_real package path lepton.mantisbuddy >/dev/null 2>&1; then
+    podman exec -i "lepton-$CTX" sh -s < "$W/mantis-start-buddy.sh" || true
+fi
 echo "booted; waiting ${WAIT}s for app"
 sleep "$WAIT"
 

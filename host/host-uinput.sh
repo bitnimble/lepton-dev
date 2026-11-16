@@ -1,7 +1,8 @@
 #!/bin/sh
 # Runs as root on the docker host (privileged nsenter). Loads the uinput kernel module and gives the
-# sysbox user namespace's root (host uid 165536 = root in lepton-runner) ownership of /dev/uinput, so
-# Lepton can pass it to Android for Mantis's input injection. Mode stays 0600.
+# sysbox user namespace's root (host uid 165536 = root in lepton-runner) ownership of /dev/uinput and of the
+# event nodes of the virtual devices below, so Lepton can pass them to Android for Mantis's input injection.
+# Idempotent.
 # Usage (from this repo): docker run --rm -i --privileged --pid=host alpine:latest \
 #     nsenter -t 1 -m -u -i -n -p -- sh -s < host/host-uinput.sh
 set -eu
@@ -9,17 +10,21 @@ DEV=/dev/uinput
 RULE=/etc/udev/rules.d/70-lepton-uinput.rules
 LOADCONF=/etc/modules-load.d/lepton-uinput.conf
 
-modprobe uinput
-# devtmpfs creates the node on module load; wait briefly if it lags
-i=0
-while [ ! -c "$DEV" ] && [ $i -lt 20 ]; do i=$((i + 1)); sleep 0.1; done
-[ -c "$DEV" ] || { echo "no $DEV after modprobe" >&2; exit 1; }
-ls -ln "$DEV"
-grep -rl uinput /usr/lib/udev/rules.d /etc/udev/rules.d 2>/dev/null || true
-
-chown 165536 "$DEV"
+# Event nodes of the two uinput devices Lepton uses: Mantis's virtual touchscreen and a Steam-Input-style
+# virtual pad (Valve 28de:11ff). Only uinput-created (virtual) devices match; real host inputs keep their owner.
+cat > "$RULE.tmp" <<'EOF'
+SUBSYSTEM=="misc", KERNEL=="uinput", OWNER="165536", MODE="0600"
+SUBSYSTEM=="input", KERNEL=="event*", DEVPATH=="/devices/virtual/input/*", ATTRS{name}=="Empusa Virtual Touchscreen", OWNER="165536"
+SUBSYSTEM=="input", KERNEL=="event*", DEVPATH=="/devices/virtual/input/*", ATTRS{id/vendor}=="28de", ATTRS{id/product}=="11ff", OWNER="165536"
+EOF
+udevadm verify "$RULE.tmp"
+mv "$RULE.tmp" "$RULE"
+udevadm control --reload
 printf 'uinput\n' > "$LOADCONF"
-printf '%s\n' 'SUBSYSTEM=="misc", KERNEL=="uinput", OWNER="165536", MODE="0600"' > "$RULE"
-udevadm control --reload || true
+
+modprobe uinput
+udevadm settle
+[ -c "$DEV" ] || { echo "no $DEV after modprobe" >&2; exit 1; }
+chown 165536 "$DEV"
 ls -ln "$DEV"
 cat "$LOADCONF" "$RULE"

@@ -46,7 +46,12 @@ Runner-level requirements (all in `bin/start-runner.sh` and `runner/Containerfil
   Lepton only enables Codec2 (`debug.stagefright.ccodec=4`) when it can open the heap, and without Codec2
   Android has no video encoder;
 - a PulseAudio socket for Android's audio HAL: `ensure_audio` runs PipeWire + WirePlumber + `pipewire-pulse`
-  as root with a null sink (`runner/pipewire-null-sink.conf`). Without it AudioFlinger blocks 4s per write.
+  as root with a null sink (`runner/pipewire-null-sink.conf`). Without it AudioFlinger blocks 4s per write;
+- `/dev/uinput` (owned by uid 165536, `host/host-uinput.sh`), the host's `/dev/input` (read-only) and
+  `--device-cgroup-rule "c 13:* rwm"`, for the virtual test pad (`runner/vpad.c`, unit `lepton-vpad`). Sysbox
+  serves `/sys/devices/virtual` itself with empty attributes for virtual input devices and refuses a docker
+  bind there, so the host's `/sys/devices/virtual/input` is mounted at `/run/host-virtual-input` and
+  bind-mounted over it after start; Lepton's gamepad passthrough reads those attributes.
 
 `docker cp` into sysbox containers is unreliable; scripts stream files over `docker exec -i … cat`.
 
@@ -73,6 +78,8 @@ bin/status.sh <ctx>; bin/lepton-lines.sh <ctx>; bin/diag.sh <ctx> <package>
 bin/shot.sh <ctx> <name>; bin/tap.sh <ctx> <name> x y [x y…]      # 150ms presses: Unity drops short taps
 bin/burst.sh <ctx> <name> [count] [seconds]                        # screenshot series
 diag/thread-cpu.sh, diag/thread-waits.sh, diag/net-rate.sh, diag/sockets.sh                # hang triage
+bin/pad.sh press a | stick l 20000 0 | trigger r 255                # virtual Steam-Input-style pad
+bin/mantis-buddy.sh [ctx]; bin/install-mantis.sh [ctx]              # Mantis buddy (re)start; Mantis install
 ```
 
 ### Browser remote control
@@ -126,8 +133,12 @@ Android boots in ~20s with software rendering. Lepton refuses an existing profil
   configuration change (`am_kill … resetConfig`). Open other apps over the game (Mantis button, Back to return)
   rather than going Home.
 - Steam launches occasionally exit within 30s of boot (cause not yet captured; see the logcat stream).
-- Lepton's install hook treats every `pm install` as the game: installing a second app re-runs the game's
-  `/data/steam_app` move (harmless "Cross-device link" errors).
+- Lepton's `cmd` wrapper (`/system/bin/cmd`, so also `pm` and `adb install`) treats every install as the game
+  and moves the game's installed dir into `/data/steam_app`. That leaves overlay whiteouts over the game's
+  `baked/app_overlay/*.apk` and `lib/`; the running game survives on open files, but the next launch fails
+  validation ("installed codePath or app_overlay/base.apk missing"). Install other apps with `cmd_real`
+  (`bin/install-mantis.sh`, `bin/mantis-buddy.sh`). Repair: replace the whiteouts with the files from
+  `lepton-apkm/<hash>/` and re-extract `lib/arm64` from the arm64 split.
 - A portrait-only app (Mantis) rotates the whole display; Unity then loses its surface. Lock landscape:
   `wm fixed-to-user-rotation enabled; wm user-rotation lock 0` (persists in the profile's `/data`).
 - Toybox `grep -E` with alternations segfaults inside Android; grep logcat on the runner side (`bin/diag.sh`).
@@ -153,12 +164,16 @@ aarch64 translator. Debuggable builds let a root caller skip the instrumentation
 instrumented process gets its source uid's (root's) permissions. `BuddyHost` loads `mantis.dex` with a
 boot-parent `DexClassLoader` (the target apk bundles a clashing kotlin), a library path containing
 `/lib/arm` (ndk_translation's test for bridging a namespace), and sets `java.class.path` through
-`System.unchangeableProps`, which the daemon reads to find its bundle. The Mantis app then shows
-"Mantis Buddy Connected".
+`System.unchangeableProps`, which the daemon reads to find its bundle. It also re-parents the system class
+loader onto that loader: JNI `FindClass` on the daemon's native threads resolves through the system loader,
+which under `app_process` holds `mantis.dex`. The Mantis app then shows "Mantis Buddy Connected".
+`runner/run-steamlaunch-rootful.sh` starts the buddy after boot whenever the host apk is installed.
 
-Touch injection still needs input devices: the daemon's "empusa" mode makes a uinput touchscreen
-(`Empusa Virtual Touchscreen`) and reads gamepads straight from `/dev/input/event*`, and `ueventd` is disabled,
-so new `eventN` nodes must be exposed to Android explicitly.
+The daemon reads gamepads straight from `/dev/input/event*`. Lepton's gamepad passthrough binds Steam Input's
+virtual pads (`Microsoft X-Box 360 pad N`, 28de:11ff) present at launch, which is what a Deck provides;
+here `bin/steamlaunch.sh` starts the matching virtual pad first. Touches go through the daemon's InputManager
+injection, which the instrumentation's root permissions allow, so Android itself never needs `/dev/uinput`
+(and must not get it: a `chmod` there would change the host node through the bind mount).
 
 Mantis also ships its own ADB client (`libmantis_adb_crypto.so`) for Wi-Fi-debugging activation; the
 PC-activation path above avoids needing it.
@@ -173,8 +188,10 @@ Every root command was reviewed first by a no-context subagent for impact on the
   that uid mapping and so gets the heap too; system-heap allocations are not charged to the runner's memory
   cgroup.
 - `uinput` loaded (`/etc/modules-load.d/lepton-uinput.conf`), `/dev/uinput` owned by uid 165536 (mode 0600
-  kept), persisted by `/etc/udev/rules.d/70-lepton-uinput.rules` (`host/host-uinput.sh`). Whoever opens it can
-  create virtual input devices on the host; this host is headless.
+  kept), and event nodes of virtual (uinput) devices named `Empusa Virtual Touchscreen` or with ids 28de:11ff
+  owned by 165536 too, all via `/etc/udev/rules.d/70-lepton-uinput.rules` (`host/host-uinput.sh`). Whoever
+  opens `/dev/uinput` can create virtual input devices on the host, including a keyboard that reaches the
+  console (Ctrl+Alt+Del, SysRq); this host is headless.
 - Sysbox 0.7.1 installed manually (`host/host-stage-sysbox.sh`, `host/host-install-sysbox.sh`), skipping the
   `.deb` postinst (it would add `bip: 172.20.0.1/16`, clashing with the `172.17.0.0/12` pool): binaries in
   `/usr/bin`, units in `/etc/systemd/system`, `sysbox` user + subids `231072:1048576`,
