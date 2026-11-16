@@ -13,6 +13,8 @@ LAYOUTS="${XDG_CONFIG_HOME:-$HOME/.config}/padmap/layouts"
 GUEST_LAYOUTS=/sdcard/Padmap
 GUEST_APK=/data/local/tmp/padmap.apk
 KEEP_SESSIONS=20
+LOGCAT_PART=32M
+LOGCAT_PARTS=4
 MAX_START_FAILS=5
 C=""
 FAILS=0
@@ -56,7 +58,7 @@ session() {
     wait_for 600 running || { log "container never started; see lepton.log"; exit 0; }
     wait_for 600 booted || { log "Android didn't finish booting; see lepton.log"; collect; exit 0; }
     log "Android booted"
-    guest logcat -b all -v threadtime >"$DIR/logcat.txt" 2>&1 &
+    guest logcat -b all -v threadtime 2>&1 | split -b "$LOGCAT_PART" -d -a 3 - "$DIR/logcat-" &
     local padmap="${LEPTON_PADMAP:-1}" tick=0
     if [[ "$padmap" == 0 ]]; then
         log "Padmap disabled (LEPTON_PADMAP=0)"
@@ -108,7 +110,7 @@ padmap_keepalive() {
         FAILS=0
     else
         FAILS=$((FAILS + 1))
-        log "Padmap didn't start ($FAILS/$MAX_START_FAILS); logcat.txt has its Padmap lines"
+        log "Padmap didn't start ($FAILS/$MAX_START_FAILS); logcat-* has its Padmap lines"
     fi
 }
 
@@ -163,6 +165,8 @@ collect() {
                 -exec cp -pu -t "$DIR/$sub" {} + 2>/dev/null || true
     done
     find "$DIR" -mindepth 1 -type d -empty -delete 2>/dev/null
+    local parts=("$DIR"/logcat-*)
+    ((${#parts[@]} <= LOGCAT_PARTS)) || rm -f -- "${parts[@]:0:${#parts[@]}-LOGCAT_PARTS}"
 }
 
 prune() {

@@ -122,6 +122,7 @@ Android boots in ~20s with software rendering. Lepton refuses an existing profil
 | Pokémon UNITE 1.25.1.1 (`jp.pokemon.pokemonunite`) | Guest account, onboarding, lobby with 3D models (`docs/screens/unite-lobby.png`) on `gapps` (appid 900002, light translator mode); bot match returns to the challenge screen after VS |
 | Padmap in UNITE | Pad taps press UNITE's buttons (Start reached the VS screen); joystick and aim drags land at their anchors and follow the sticks, two at once (`docs/screens/padmap-drag.png`, `pointer_location`); the editor opens with Select + Start, binds by pad press and saves (`docs/screens/padmap-editor.png`) |
 | UNITE frame rate (software rendering, SurfaceFlinger `--timestats`) | ~25.5 fps on the challenge screen, ~23 fps on the 3D VS screen |
+| Steam Deck bundle (`padmap-20261116`) | Packaged and validated by `lepton-customize`; not yet run on a Deck |
 
 ## Known issues
 
@@ -139,7 +140,7 @@ Android boots in ~20s with software rendering. Lepton refuses an existing profil
 - Lepton ends the session when the game's process dies, and Android may kill a backgrounded game on a
   configuration change (`am_kill … resetConfig`, e.g. after `wm size`/rotation changes). Padmap's editor is an
   overlay window, so the game stays in front.
-- Steam launches occasionally exit within 30s of boot (cause not yet captured; see the session's `logcat.txt`).
+- Steam launches occasionally exit within 30s of boot (cause not yet captured; see the session's `logcat-*`).
 - Lepton's `cmd` wrapper (`/system/bin/cmd`, so also `pm` and `adb install`) treats every install as the game
   and moves the game's installed dir into `/data/steam_app`. That leaves overlay whiteouts over the game's
   `baked/app_overlay/*.apk` and `lib/`; the running game survives on open files, but the next launch fails
@@ -158,7 +159,7 @@ The patched Steam entry (`patches/entry-hook.patch`) sources `entry-hook.sh` on 
 runs for Steam launches and for Lepton's "Add Google game" steps alike. Per launch it makes
 `~/lepton-logs/<appid>-<date>-<time>/` (`latest` symlink, last 20 kept), tees the entry's output into
 `lepton.log`, picks the NDK translation mode from `ndk-modes` by the `.apkm`'s package (unless already set), and
-starts `lepton-padmap session` detached. The session waits for boot, streams `logcat -b all` to `logcat.txt`,
+starts `lepton-padmap session` detached. The session waits for boot, streams `logcat -b all` to `logcat-NNN` (32 MB parts, newest four kept),
 installs Padmap with `cmd_real`, pushes the host's layouts (`~/.config/padmap/layouts/`, seeded from
 `addon/padmap/layouts/`) into Android's `/sdcard/Padmap/`, then every 5s (re)starts Padmap's daemon as root
 (Padmap's own `start.sh`, with adbd's environment; 5 failed starts max), syncs layouts both ways (editor saves
@@ -175,13 +176,14 @@ Padmap reads the pad from evdev inside Android: Lepton's gamepad passthrough bin
 
 `bin/build-deck-bundle.sh [id]` builds `data/deck-dist/<id>/` (Lepton's `.tar.gz`, `.sha256`, `.install.sh`),
 which goes into `bundle/` of the Deck's clone of this repo (user guide: `deck/README.md`). In the runner
-(`runner/build-deck-bundle.sh`) it copies the `gapps` stage, applies the patched entry,
-`patches/c2-input-surface.patch` and the add-on, sysbakes rootfully, then records that sysbake through
+(`runner/build-deck-bundle.sh`, about 70s) it copies the `gapps` stage, applies the patched entry and
+`patches/c2-input-surface.patch`, sysbakes rootfully, then records that sysbake through
 `lepton-customize`'s own validation (`runner/deck-record-sysbake.py` swaps only the rootless helper for the
 prebuilt result) and packages with `lepton-customize package` as tool id `lepton_padmap`. On the Deck,
 `deck/update.sh` pulls, and `deck/install.sh` runs Lepton's own installer for a bundle newer than the
 installed one (`--replace`), then replaces the installed tool's add-on and entry with `addon/` and
-`patches/lepton-x86_64-entry`. Lepton's runtime fingerprint covers only the rootfs, `services.jar` and the
+`patches/lepton-x86_64-entry` (the packager only keeps Lepton's own files, so the add-on always comes from
+the checkout). Lepton's runtime fingerprint covers only the rootfs, `services.jar` and the
 sysbaked `packages.xml`, so add-on changes (Padmap included) ship by `git pull` alone; Android-side changes
 (stage, sysbake) need a new bundle.
 

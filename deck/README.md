@@ -65,7 +65,7 @@ Every launch writes `~/lepton-logs/<appid>-<date>-<time>/` (the newest is `~/lep
 | --- | --- |
 | `session.log` | What the add-on did: boot, Padmap install and starts, layout syncs |
 | `lepton.log` | Lepton's launcher output |
-| `logcat.txt` | All of Android's logs (`logcat -b all`; Padmap's lines are tagged `Padmap`) |
+| `logcat-000`, `logcat-001`, … | All of Android's logs (`logcat -b all`; Padmap's lines are tagged `Padmap`), in 32 MB parts; the newest four are kept |
 | `tombstones/`, `anr/`, `system/dropbox/` | Native crashes, ANRs and crash reports from that launch |
 
 To report a problem, use the desktop icon **Lepton: Save crash report** (or `~/.local/bin/lepton-padmap report`):
