@@ -1,3 +1,4 @@
+#!/bin/sh
 grep PRETTY /etc/os-release
 uname -r
 echo "--- daemon.json"

@@ -11,12 +11,12 @@ touch mapping ([deck/README.md](deck/README.md)).
 | --- | --- |
 | `runner/` | Files that run **inside** `lepton-runner`: image (`Containerfile`), env, launch/sysbake/stage/bundle scripts |
 | `bin/` | Host-side helpers (run from this dev container via the docker socket) |
-| `host/` | Scripts that ran as **root on the docker host** (via privileged `nsenter`); see Host changes |
+| `host/` | Scripts run as **root on the docker host** (via privileged `nsenter`); see Host changes |
 | `addon/` | The Lepton + Padmap add-on, shipped as a bundle's `compat_tool/lepton-padmap/`; `addon/padmap/` is Padmap's APK, start script and layouts, vendored by `bin/update-padmap.sh` from [bitnimble/padmap](https://github.com/bitnimble/padmap) (checked out next to this repo) |
 | `deck/` | Deck-side installer/updater and user guide; the Deck runs them from a clone of this repo |
 | `bundle/` (gitignored) | On the Deck: Android bundles copied from `data/deck-dist/<id>/` |
 | `patches/` | Patches to the release's `compat_tool/` (`*.patch`), with the patched `liblepton.sh`, `properties.sh` and `lepton-x86_64-entry` that `bin/push.sh` installs |
-| `diag/` | Probes used while debugging sysbox/podman/binder |
+| `diag/` | Hang-triage probes for a running session |
 | `docs/screens/` | Reference screenshots |
 | `data/` (gitignored) | Release bundle, Google r14 system image, APK/APKM files, sysbox sources/builds, screenshots |
 
@@ -38,7 +38,8 @@ the runner's root is still unprivileged on the host. `patches/rootful-liblepton.
   nodes get a dynamic char major missing from rootful podman's device allowlist);
 - `as_container_owner` instead of `podman unshare` (rootless-only).
 
-Runner-level requirements (all in `bin/start-runner.sh` and `runner/Containerfile`):
+Runner-level requirements (`bin/start-runner.sh`, `runner/Containerfile`, the patched `liblepton.sh` and the
+`host/` scripts named below):
 
 - `--device-cgroup-rule "c <binder major>:* rwm"` on the runner itself (major read from `/proc/devices`);
 - `seccomp=unconfined`: docker's default profile denies `mount` (it gates on CAP_SYS_ADMIN from docker's
@@ -126,11 +127,17 @@ Android boots in ~20s with software rendering. Lepton refuses an existing profil
 
 ## Known issues
 
-- UNITE hangs on "Loading..." after guest login in the translator's tiered mode, which Lepton picks
-  automatically after install (`baked/lepton-ndk-mode`): native `MSDKV5-Http-*` threads spin forever,
-  one caught inside `HeavyOptimizeRegion → ResolveJumps → SplitBasicBlock` (`debuggerd -b <pid>`;
-  `debuggerd -j` and SIGQUIT are swallowed by CrashSight). `light-translate-or-interpret` works: set
-  `LEPTON_NDK_TRANSLATION_MODE` per launch, or write the mode into the game's `baked/lepton-ndk-mode`.
+- The translator's heavy optimizer (tiered and heavy-optimize modes) loops forever in
+  `HeavyOptimizeRegion → ResolveJumps → SplitBasicBlock` on an ARM64 jump to a `NOP`; in UNITE a comparator in
+  `libMSDKCore.so` (file offset `0x24cd40`, found with gdb: `r14` in the `HeavyOptimizeRegion(unsigned long)` frame
+  is the guest PC), hanging it at "Loading..." while other threads spin waiting. With `tiered`, the entry hook
+  runs `addon/arm64_branch_nops.py` on the game's libraries first, retargeting such jumps past the NOPs (203 in
+  `libMSDKCore.so`); UNITE then gets past loading in tiered mode. It skips the ACE anti-cheat libraries
+  (`libanogs.so`, `libanort.so`), with which UNITE crashed. UNITE defaults to light mode (`addon/ndk-modes`)
+  because the patch modifies game code its anti-cheat could notice; `test/arm64_branch_nops_test.py` checks it.
+- UNITE in the runner sometimes dies within a minute of starting: an ART `ThreadList::Register` SIGSEGV via the
+  translator's `AttachCurrentThread` trampoline ("Cannot process signal 11"), after ~1700 threads; the runner's
+  UNITE shows "Offline Mode", so its network SDK is likely retrying in a loop.
 - Apps cannot create `Android/{data,obb}/<pkg>/…` dirs (e.g. `getExternalCacheDir()`): the app's own mkdir
   hits root-owned dirs, and the `StorageManagerService.mkdirs` fallback canonicalises
   `/storage/emulated/0` through Lepton's `/data/media/0` symlink to the compatdata path, then rejects it
@@ -165,12 +172,15 @@ puts a copy of `/usr/bin/gamescope` without file capabilities (`~/.cache/lepton-
 starts `lepton-padmap session` detached. The copy is for Steam's performance overlay: `mangoapp` reads the game
 window's `/proc/<pid>/fdinfo`, which for Lepton's nested gamescope with SteamOS's `cap_sys_nice` is unreadable, and
 it aborts on that in a loop (each core dump freezes the game for about a second) until systemd stops restarting it. The session waits for boot, streams `logcat -b all` to `logcat-NNN` (32 MB parts, newest four kept),
-installs Padmap with `cmd_real`, pushes the host's layouts (`~/.config/padmap/layouts/`, seeded from
-`addon/padmap/layouts/`) into Android's `/sdcard/Padmap/`, then every 5s (re)starts Padmap's daemon as root
-(Padmap's own `start.sh`, with adbd's environment; 5 failed starts max), syncs layouts both ways (editor saves
-go to the host, host edits to the game) and copies new tombstones/ANRs/dropbox entries out of the profile. All
-of it is logged in `session.log`. `lepton-padmap report` tars the last 5 sessions, Lepton's logcats, the
-layouts and system details to `~/Desktop/lepton-report-<date>.tar.gz`. `LEPTON_PADMAP=0` skips Padmap.
+installs Padmap with `cmd_real`, reconciles the host's layouts (`~/.config/padmap/layouts/`, seeded from
+`addon/padmap/layouts/`) with Android's `/sdcard/Padmap/` (the newer copy of each wins), then every 5s
+(re)starts Padmap's daemon as root (Padmap's own `start.sh`, with adbd's environment; 5 failed starts max),
+syncs layouts both ways (editor saves go to the host, host edits to the game) and copies new
+tombstones/ANRs/dropbox entries out of the profile; a last sync runs when the game ends. All of it is logged in
+`session.log`. `lepton-padmap report` tars the last 5 sessions, Lepton's logcats, the layouts, the kernel and
+user-session journals (the latter filtered to Steam, gamescope, Lepton and core dumps) and system details to
+`~/Desktop/lepton-report-<date>.tar.gz`. `LEPTON_PADMAP=0` in a game's launch options skips Padmap (the
+session still collects logs and the gamescope copy still applies).
 
 Padmap reads the pad from evdev inside Android: Lepton's gamepad passthrough binds Steam Input's virtual pads
 (`Microsoft X-Box 360 pad N`, 28de:11ff) present at launch, which is what a Deck provides; here
@@ -185,8 +195,8 @@ which goes into `bundle/` of the Deck's clone of this repo (user guide: `deck/RE
 `patches/c2-input-surface.patch`, sysbakes rootfully, then records that sysbake through
 `lepton-customize`'s own validation (`runner/deck-record-sysbake.py` swaps only the rootless helper for the
 prebuilt result) and packages with `lepton-customize package` as tool id `lepton_padmap`. On the Deck,
-`deck/update.sh` pulls, and `deck/install.sh` runs Lepton's own installer for a bundle newer than the
-installed one (`--replace`), then replaces the installed tool's add-on and entry with `addon/` and
+`deck/update.sh` pulls, and `deck/install.sh` runs Lepton's own installer when the newest bundle in `bundle/`
+differs from the installed one (`--replace`), then replaces the installed tool's add-on and entry with `addon/` and
 `patches/lepton-x86_64-entry` (the packager only keeps Lepton's own files, so the add-on always comes from
 the checkout). Lepton's runtime fingerprint covers only the rootfs, `services.jar` and the
 sysbaked `packages.xml`, so add-on changes (Padmap included) ship by `git pull` alone; Android-side changes

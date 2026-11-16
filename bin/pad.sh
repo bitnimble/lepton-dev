@@ -11,7 +11,7 @@ send() { docker exec lepton-runner sh -c "printf '%s\n' '$*' >> $W/run/vpad.fifo
 case "$1" in
 start)
     docker exec lepton-runner systemctl is-active -q lepton-vpad ||
-        docker exec lepton-runner systemd-run -q --unit lepton-vpad /bin/bash "$W/vpad.sh"
+        docker exec lepton-runner systemd-run -q --collect --unit lepton-vpad /bin/bash "$W/vpad.sh"
     ;;
 stop) docker exec lepton-runner systemctl stop lepton-vpad ;;
 press)

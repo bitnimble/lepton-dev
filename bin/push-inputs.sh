@@ -11,6 +11,6 @@ for f in google/x86_64-34_r14.zip \
          apks/aaaaxy-arm64.apk apks/calculator-10-foss-release.apk; do
     name=$(basename "$f")
     docker exec lepton-runner test -s "$D/$name" && continue
-    docker exec -i lepton-runner sh -c "cat >| '$D/$name'" < "$R/$f"
+    docker exec -i lepton-runner sh -c "cat >| '$D/$name.part' && mv '$D/$name.part' '$D/$name'" < "$R/$f"
 done
 docker exec lepton-runner sh -c "cd $D && ls -la && sha1sum x86_64-34_r14.zip && sha256sum --ignore-missing -c lepton-x86_64-v0.2.0-alpha.tar.gz.sha256"

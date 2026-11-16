@@ -44,7 +44,7 @@ if ((${#bundles[@]})); then
         [[ ! -d "$TOOL" ]] || args+=(--replace)
         bash "${newest%.tar.gz}.install.sh" "${args[@]}"
         for old in "${bundles[@]:0:${#bundles[@]}-1}"; do
-            rm -f -- "${old%.tar.gz}".*
+            rm -f -- "$old" "$old.sha256" "${old%.tar.gz}.install.sh"
         done
     fi
 fi
@@ -53,8 +53,10 @@ fi
     exit 1
 }
 
+rm -rf "$ADDON.new"
+cp -r "$REPO/addon" "$ADDON.new"
 rm -rf "$ADDON"
-cp -r "$REPO/addon" "$ADDON"
+mv "$ADDON.new" "$ADDON"
 install -m 755 "$REPO/patches/lepton-x86_64-entry" "$TOOL/compat_tool/lepton-x86_64-entry"
 echo "[PASS] Add-on updated from $REPO ($(git -C "$REPO" log -1 --format='%h %cs' 2>/dev/null || echo 'not a git checkout'))"
 

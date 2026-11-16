@@ -12,7 +12,7 @@ your own system image; personal use only); this checkout holds the installer and
    Deck (`passwd`, then `sudo systemctl start sshd`):
    `scp data/deck-dist/<id>/* deck@steamdeck:lepton-dev/bundle/`
 3. Open `~/lepton-dev/deck/` in Dolphin and run **Install / update Lepton + Padmap** (or
-   `bash ~/lepton-dev/deck/update.sh`). It downloads Google's `adb` (needs internet), installs the tool as
+   `bash ~/lepton-dev/deck/update.sh`). Lepton's installer downloads Google's `adb` (needs internet), installs the tool as
    `lepton_padmap` and adds desktop icons.
 4. Restart Steam.
 
@@ -21,7 +21,8 @@ your own system image; personal use only); this checkout holds the installer and
 Desktop icon **Lepton: Update Lepton + Padmap** (or `bash ~/lepton-dev/deck/update.sh`), with no game running:
 it runs `git pull`, then replaces the installed tool's add-on (Padmap included) and Steam entry with the
 checkout's. A new bundle is needed only when the Android side changes: copy it into `bundle/` as above and run
-Update; it replaces the tool in place and deletes the older bundle files. Games, sign-ins and layouts are kept
+Update; when the newest bundle in `bundle/` differs from the installed one, it replaces the tool in place and
+deletes the other bundle files. Games, sign-ins and layouts are kept
 either way. Restart Steam after a bundle update.
 
 ## Add a game
@@ -33,8 +34,10 @@ either way. Restart Steam after a bundle update.
 2. Gaming Mode, the game's **Controller settings > Edit Layout > Default Action Set > Always-On Command >
    System > Touchscreen Native Support**, so taps on the screen reach Android as real touches.
 
-Pokémon UNITE gets the light ARM translator automatically (`ndk-modes` in the add-on); its default tiered
-translator hangs at "Loading...".
+Pokémon UNITE gets the light ARM translator automatically (`ndk-modes` in the add-on). The faster tiered mode
+is CPU-cheaper but opt-in: launch option `LEPTON_NDK_TRANSLATION_MODE=tiered %command%`. For it, the add-on patches
+jumps in the game's libraries that hang the translator (equivalent code, but modified, so UNITE's anti-cheat could
+in principle notice); they stay patched afterwards, and reinstalling the game restores them.
 
 ## Controls
 
@@ -45,7 +48,7 @@ Padmap starts with every launch and maps the controller through the game's layou
 - Bind it from the Deck. A tap: press its button. A stick: move the stick. An aim: press its button, then move
   the stick that aims it (the label shows `LB+?` until you do). Padmap's names are Xbox ones: L1 / R1 are `LB` /
   `RB`, L2 / R2 are `LT` / `RT`.
-- Tap a control to select it again and rebind, move or resize it. **−** / **+** resize.
+- Tap a control to select it again and rebind, move or resize it. **−** / **+** resize, **Delete** removes it.
 - A selected aim has a checkbox, **Aim with LS while RS is centred** (off by default): the other stick aims the
   skill while its own stick is untouched, e.g. cast in the direction you're walking.
 - **View + Menu** or **Close** saves any changes and returns to the game.
@@ -81,6 +84,10 @@ Every launch writes `~/lepton-logs/<appid>-<date>-<time>/` (the newest is `~/lep
 
 To report a problem, use the desktop icon **Lepton: Save crash report** (or `~/.local/bin/lepton-padmap report`):
 it writes `~/Desktop/lepton-report-<date>.tar.gz` with the last five launches, Lepton's own logcats, your layouts,
-system details and this boot's kernel and session logs (GPU resets, Gamescope), so save it before rebooting. Send that file. **Lepton: Open logs** opens the folder.
+system details and this boot's kernel journal and user-session journal (Steam, Gamescope and crash lines only:
+GPU resets, overlay crashes), so save it before rebooting. Send that file. **Lepton: Open logs** opens the folder.
+
+Steam's performance overlay works because the add-on runs Lepton's Gamescope from a capability-free copy in
+`~/.cache/lepton-padmap/bin/`; if the overlay freezes the game every few seconds or vanishes, include a report.
 
 Padmap is restarted automatically if it stops (up to five failed starts per launch, logged in `session.log`).

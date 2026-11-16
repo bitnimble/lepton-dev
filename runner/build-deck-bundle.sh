@@ -31,7 +31,7 @@ mkdir "$PREBAKED"
 mv "$BAKE/compat_tool/sysbake" "$BAKE/compat_tool/sysbake.xattrs" "$PREBAKED/"
 rm -rf "$BAKE"
 chown -R dev:dev "$PREBAKED"
-unreadable="$(find "$PREBAKED" ! -perm -u+r | head -n 5)"
+unreadable="$(find "$PREBAKED" ! -perm -u+r | head -n 5 || true)"
 [[ -z "$unreadable" ]] || { echo "sysbake has owner-unreadable entries, e.g.:" >&2; echo "$unreadable" >&2; exit 1; }
 
 step "validating and recording the sysbake"

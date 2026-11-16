@@ -71,11 +71,14 @@ int main(void) {
     int code, value;
     struct pollfd fds[] = {{.fd = 0, .events = POLLIN}, {.fd = fd, .events = POLLIN}};
     while (poll(fds, 2, -1) >= 0) {
+        if ((fds[0].revents | fds[1].revents) & (POLLERR | POLLNVAL)) break;
         if (fds[1].revents & POLLIN) serve_ff();
         if (!(fds[0].revents & (POLLIN | POLLHUP))) continue;
         if (!fgets(line, sizeof line, stdin)) break;
         if (sscanf(line, "%7s %i %i", kind, &code, &value) != 3) continue;
-        emit(strcmp(kind, "key") == 0 ? EV_KEY : EV_ABS, code, value);
+        int type = strcmp(kind, "key") == 0 ? EV_KEY : strcmp(kind, "abs") == 0 ? EV_ABS : -1;
+        if (type < 0) { fprintf(stderr, "vpad: unknown event %s\n", kind); continue; }
+        emit(type, code, value);
         emit(EV_SYN, SYN_REPORT, 0);
     }
     ioctl(fd, UI_DEV_DESTROY);

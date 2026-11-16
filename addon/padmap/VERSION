@@ -1,1 +1,1 @@
-padmap 1ebc29f 2026-11-16 feat(daemon): forward app vibrations to the gamepad's rumble
+padmap 6d0c298 2026-11-16 fix: harden the daemon and editor after a full review

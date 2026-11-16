@@ -33,14 +33,14 @@ systemctl is-active sysbox.service sysbox-mgr.service sysbox-fs.service
 
 echo "== docker runtime"
 CFG=/etc/docker/daemon.json
-if [[ "$(jq '.runtimes | has("sysbox-runc")' "$CFG")" != true ]]; then
+if [[ "$(jq '(.runtimes // {}) | has("sysbox-runc")' "$CFG")" != true ]]; then
     cp -a "$CFG" "$CFG.bak-pre-sysbox"
     jq --indent 4 '.runtimes += {"sysbox-runc": {"path": "/usr/bin/sysbox-runc"}}' "$CFG.bak-pre-sysbox" >| "$CFG.new"
     dockerd --validate --config-file "$CFG.new"
     mv "$CFG.new" "$CFG"
 fi
 diff "$CFG.bak-pre-sysbox" "$CFG" || true
-kill -HUP "$(pidof dockerd)"
+pkill -HUP -x dockerd
 sleep 2
 docker info --format '{{range $k, $v := .Runtimes}}{{$k}} {{end}}'
 docker ps -q | wc -l

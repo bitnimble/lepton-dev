@@ -41,7 +41,7 @@ main() {
     install) C="lepton-${2:?context}"; install_padmap && start_padmap ;;
     edit) C="lepton-${2:?context}"; guest am start-foreground-service -n app.padmap/.ui.OverlayService --ez edit true ;;
     report) report ;;
-    *) sed -n '2,9p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2 ;;
+    *) sed -n '2,8p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2 ;;
     esac
 }
 
@@ -53,42 +53,62 @@ session() {
     C="lepton-steamlaunch-${SteamAppId:?}"
     exec >>"$DIR/session.log" 2>&1
     log "watching $C (add-on $ADDON, $(cat "$ADDON/padmap/VERSION" 2>/dev/null))"
+    PADMAP="${LEPTON_PADMAP:-1}"
     # Steam's reaper ends this with the game, so crash files are collected as they appear, not only at the end.
-    trap 'collect; log "stopped"; exit 0' TERM INT
-    wait_for 600 running || { log "container never started; see lepton.log"; exit 0; }
-    wait_for 600 booted || { log "Android didn't finish booting; see lepton.log"; collect; exit 0; }
+    trap 'finish; log "stopped"; exit 0' TERM INT
+    wait_for 600 running || { log "container never started; see lepton.log"; prune; exit 0; }
+    wait_for 600 booted || { log "Android didn't finish booting; see lepton.log"; collect; prune; exit 0; }
     log "Android booted"
+    BOOTED=1
     guest logcat -b all -v threadtime 2>&1 | split -b "$LOGCAT_PART" -d -a 3 - "$DIR/logcat-" &
-    local padmap="${LEPTON_PADMAP:-1}" tick=0
-    if [[ "$padmap" == 0 ]]; then
+    local tick=0
+    if [[ "$PADMAP" == 0 ]]; then
         log "Padmap disabled (LEPTON_PADMAP=0)"
     else
         install_padmap
         seed_layouts
     fi
-    while running; do
-        if [[ "$padmap" != 0 ]]; then
+    while alive; do
+        if [[ "$PADMAP" != 0 ]]; then
             padmap_keepalive
             sync_layouts
         fi
         ((tick++ % 6)) || collect
         sleep 5
     done
-    collect
+    finish
     log "session ended"
+}
+
+finish() {
+    [[ "$PADMAP" == 0 || -z "${BOOTED:-}" ]] || sync_layouts
+    collect
     prune
 }
 
+# a single failed inspect (podman busy, mid-exec) isn't the game ending
+alive() {
+    local try
+    for try in 1 2 3; do
+        running && return 0
+        sleep 1
+    done
+    return 1
+}
+
 install_padmap() {
-    podman exec -i "$C" sh -c "cat > $GUEST_APK.new" <"$ADDON/padmap/padmap.apk"
+    podman exec -i "$C" sh -c "cat > $GUEST_APK.new" <"$ADDON/padmap/padmap.apk" || return 1
     if guest cmp -s "$GUEST_APK.new" "$GUEST_APK" && guest cmd_real package path app.padmap >/dev/null 2>&1; then
         guest rm "$GUEST_APK.new"
         return 0
     fi
     log "installing Padmap"
-    guest mv "$GUEST_APK.new" "$GUEST_APK"
     # cmd_real, not pm: Lepton's cmd wrapper treats every install as the game and moves the game's APKs away
-    guest cmd_real package install -r "$GUEST_APK" </dev/null
+    if ! guest cmd_real package install -r "$GUEST_APK.new" </dev/null; then
+        log "installing Padmap failed; retrying while it's down"
+        return 1
+    fi
+    guest mv "$GUEST_APK.new" "$GUEST_APK"
 }
 
 start_padmap() {
@@ -106,7 +126,7 @@ padmap_keepalive() {
     fi
     ((FAILS < MAX_START_FAILS)) || return 0
     log "starting Padmap"
-    if start_padmap; then
+    if install_padmap && start_padmap; then
         FAILS=0
     else
         FAILS=$((FAILS + 1))
@@ -114,42 +134,56 @@ padmap_keepalive() {
     fi
 }
 
-# The host copy (~/.config/padmap/layouts) is canonical at launch; afterwards whichever side changed since the
-# last sync wins, guest (the editor) first.
 seed_layouts() {
-    local file name
+    local file name hash mtime
     mkdir -p "$LAYOUTS" "$SYNCED"
     for file in "$ADDON"/padmap/layouts/*.json; do
         name="$(basename "$file")"
         [[ -e "$LAYOUTS/$name" ]] || cp "$file" "$LAYOUTS/$name"
     done
     guest mkdir -p "$GUEST_LAYOUTS"
-    for file in "$LAYOUTS"/*.json; do
-        [[ -f "$file" ]] || continue
-        push_layout "$(basename "$file")"
-    done
+    while read -r hash mtime name; do
+        layout_name "$name" && [[ "$mtime" =~ ^[0-9]+$ ]] || continue
+        if [[ -f "$LAYOUTS/$name" && "$hash" == "$(md5 "$LAYOUTS/$name")" ]]; then
+            cp "$LAYOUTS/$name" "$SYNCED/$name"
+        elif [[ ! -f "$LAYOUTS/$name" ]] || ((mtime > $(stat -c %Y "$LAYOUTS/$name"))); then
+            pull_layout "$name" && log "layout $name kept from the game's newer copy"
+        else
+            push_layout "$name" && log "layout $name pushed from $LAYOUTS"
+        fi
+    done < <(guest_layouts '%s %s' '$(md5sum <"$f" | cut -d" " -f1) $(stat -c %Y "$f")')
+    sync_layouts
 }
 
 sync_layouts() {
     local hash name file
     while read -r hash name; do
-        [[ -n "$name" && "$hash" != "$(md5 "$SYNCED/$name")" ]] || continue
-        guest cat "$GUEST_LAYOUTS/$name" >"$LAYOUTS/$name.tmp" && mv "$LAYOUTS/$name.tmp" "$LAYOUTS/$name"
-        cp "$LAYOUTS/$name" "$SYNCED/$name"
-        log "layout $name saved from the editor to $LAYOUTS"
-    done < <(guest sh -c "cd $GUEST_LAYOUTS 2>/dev/null && for f in *.json; do [ -f \"\$f\" ] && md5sum \"\$f\"; done")
+        layout_name "$name" && [[ "$hash" != "$(md5 "$SYNCED/$name")" ]] || continue
+        pull_layout "$name" && log "layout $name saved from the editor to $LAYOUTS"
+    done < <(guest_layouts '%s' '$(md5sum <"$f" | cut -d" " -f1)')
     for file in "$LAYOUTS"/*.json; do
         [[ -f "$file" ]] || continue
         name="$(basename "$file")"
-        [[ "$(md5 "$file")" != "$(md5 "$SYNCED/$name")" ]] || continue
-        push_layout "$name"
-        log "layout $name pushed from $LAYOUTS"
+        layout_name "$name" && [[ "$(md5 "$file")" != "$(md5 "$SYNCED/$name")" ]] || continue
+        push_layout "$name" && log "layout $name pushed from $LAYOUTS"
     done
 }
 
+# prints "<fields> <name>" per guest layout; FIELDS is evaluated in the guest with $f set
+guest_layouts() {
+    guest sh -c "cd $GUEST_LAYOUTS 2>/dev/null && for f in *.json; do [ -f \"\$f\" ] && printf '$1 %s\n' $2 \"\$f\"; done"
+}
+
+layout_name() { [[ "$1" =~ ^[A-Za-z0-9._]+\.json$ ]]; }
+
+pull_layout() {
+    guest cat "$GUEST_LAYOUTS/$1" >"$LAYOUTS/$1.tmp" && mv "$LAYOUTS/$1.tmp" "$LAYOUTS/$1" &&
+        cp "$LAYOUTS/$1" "$SYNCED/$1"
+}
+
 push_layout() {
-    podman exec -i "$C" sh -c "cat > '$GUEST_LAYOUTS/$1'" <"$LAYOUTS/$1"
-    cp "$LAYOUTS/$1" "$SYNCED/$1"
+    podman exec -i "$C" sh -c "cat > '$GUEST_LAYOUTS/$1.tmp' && mv '$GUEST_LAYOUTS/$1.tmp' '$GUEST_LAYOUTS/$1'" \
+        <"$LAYOUTS/$1" && cp "$LAYOUTS/$1" "$SYNCED/$1"
 }
 
 md5() { [[ -f "$1" ]] && md5sum <"$1" | cut -d' ' -f1; }
@@ -173,11 +207,20 @@ prune() {
     local old
     while IFS= read -r old; do
         rm -rf -- "$old"
-    done < <(ls -1dt "$LOGS"/*-*/ 2>/dev/null | tail -n +$((KEEP_SESSIONS + 1)))
+    done < <(sessions | tail -n +$((KEEP_SESSIONS + 1)))
+}
+
+# newest first; LEPTON_LOG_DIR may be shared with other files, so only dirs this add-on made
+sessions() {
+    local dir
+    while IFS= read -r dir; do
+        [[ -f "$dir/session.log" ]] && printf '%s\n' "$dir"
+    done < <(ls -1dt "$LOGS"/[0-9]*-[0-9]*-[0-9]*/ 2>/dev/null)
 }
 
 report() {
     local out="$HOME/Desktop" name tmp session
+    umask 077
     [[ -d "$out" ]] || out="$HOME"
     name="lepton-report-$(date +%Y%m%d-%H%M%S)"
     tmp="$(mktemp -d)"
@@ -190,10 +233,11 @@ report() {
         echo "== resources"; df -h "$HOME"; free -h
     } >"$tmp/$name/system.txt" 2>&1
     journalctl -k -b -o short-precise --no-pager >"$tmp/$name/kernel.txt" 2>&1
-    journalctl --user -b -o short-precise --no-pager | tail -n 50000 >"$tmp/$name/user-journal.txt" 2>&1
+    journalctl --user -b -o short-precise --no-pager 2>&1 |
+        grep -iE 'gamescope|mangoapp|steam|lepton|padmap|podman|coredump' | tail -n 20000 >"$tmp/$name/user-journal.txt"
     while IFS= read -r session; do
         cp -r "$session" "$tmp/$name/sessions/"
-    done < <(ls -1dt "$LOGS"/*-*/ 2>/dev/null | head -n 5)
+    done < <(sessions | head -n 5)
     cp -r "$HOME/.steam/steam/logs/lepton-logcats/." "$tmp/$name/lepton-logcats/" 2>/dev/null
     cp "$LAYOUTS"/*.json "$tmp/$name/layouts/" 2>/dev/null
     tar -C "$tmp" -czf "$out/$name.tar.gz" "$name"

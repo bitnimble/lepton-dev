@@ -4,6 +4,7 @@
 set -euo pipefail
 APK="$1"; WAIT="${2:-30}"
 CTX="$(basename "$APK" | sed 's/[^a-zA-Z0-9_.-]/_/g')"
+[[ "$CTX" != . && "$CTX" != .. ]] || { echo "bad APK name: $APK" >&2; exit 2; }
 bash "$(dirname "$0")/push.sh" >/dev/null
 docker exec lepton-runner bash /var/lib/containers/lepton/setup-rootful.sh >/dev/null
 docker exec lepton-runner bash -c "podman rm -f 'lepton-$CTX' >/dev/null 2>&1; rm -rf '/var/lib/containers/lepton/home/.local/share/lepton/contexts/$CTX'; rm -f '/var/lib/containers/lepton/run/$CTX.log' '/var/lib/containers/lepton/run/$CTX.png'"
