@@ -1,19 +1,28 @@
 # Lepton + Mantis on a Steam Deck
 
 A Lepton x86_64 compatibility tool (Android 14) with Google Play services, ARM64 translation and the Mantis
-Gamepad Pro add-on: Mantis maps the Deck's controls to on-screen touches in Android games. Built from
-[lepton-dev](../README.md); for personal use (it contains Google components from your own system image).
+Gamepad Pro add-on: Mantis maps the Deck's controls to on-screen touches in Android games. The Android bundle
+is built by [lepton-dev](../README.md) and never committed (it contains Google components from your own system
+image and the Mantis APK; personal use only); this checkout holds the installer and the add-on.
 
 ## Install
 
-1. Copy this folder to the Deck as `~/Downloads/lepton-mantis/` (about 900 MB). From the build machine, with SSH
-   enabled on the Deck (`passwd`, then `sudo systemctl start sshd`):
-   `scp -r data/deck-dist/<id> deck@steamdeck:Downloads/lepton-mantis`
-2. Desktop Mode: open the folder in Dolphin and run **Install Lepton + Mantis** (or, in Konsole,
-   `bash ~/Downloads/lepton-mantis/install.sh`). It downloads Google's `adb` (needs internet), installs the tool
-   as `lepton_mantis` and adds desktop icons. Running it again with a newer build replaces the tool in place;
-   games, sign-ins and Mantis setup live in Steam's game data and are kept.
-3. Restart Steam.
+1. Desktop Mode, Konsole: `git clone <this repo> ~/lepton-dev`.
+2. Copy a bundle into `~/lepton-dev/bundle/` (about 900 MB). From the build machine, with SSH enabled on the
+   Deck (`passwd`, then `sudo systemctl start sshd`):
+   `scp data/deck-dist/<id>/* deck@steamdeck:lepton-dev/bundle/`
+3. Open `~/lepton-dev/deck/` in Dolphin and run **Install / update Lepton + Mantis** (or
+   `bash ~/lepton-dev/deck/update.sh`). It downloads Google's `adb` (needs internet), installs the tool as
+   `lepton_mantis` and adds desktop icons.
+4. Restart Steam.
+
+## Update
+
+Desktop icon **Lepton: Update Lepton + Mantis** (or `bash ~/lepton-dev/deck/update.sh`), with no game running:
+it runs `git pull`, then copies the add-on and Steam entry from the checkout over the installed tool. A new
+bundle is needed only when the Android side changes: copy it into `bundle/` as above and run Update; it
+replaces the tool in place and deletes the older bundle files. Games, sign-ins and Mantis setup live in Steam's
+game data and are kept either way. Restart Steam after a bundle update.
 
 ## Add a game
 

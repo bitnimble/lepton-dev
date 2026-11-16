@@ -14,7 +14,8 @@ produces: Lepton with Google Play services, ARM64 translation and the Mantis Gam
 | `host/` | Scripts that ran as **root on the docker host** (via privileged `nsenter`); see Host changes |
 | `addon/` | The Lepton + Mantis add-on, shipped as a bundle's `compat_tool/lepton-mantis/` |
 | `mantis-buddy/host/` | Source of the buddy host apk (`BuddyHost` instrumentation) |
-| `deck/` | Deck-side installer and user guide, copied next to the bundle |
+| `deck/` | Deck-side installer/updater and user guide; the Deck runs them from a clone of this repo |
+| `bundle/` (gitignored) | On the Deck: Android bundles copied from `data/deck-dist/<id>/` |
 | `patches/` | Patches to the release's `compat_tool/` (`*.patch`), with the patched `liblepton.sh`, `properties.sh` and `lepton-x86_64-entry` that `bin/push.sh` installs |
 | `diag/` | Probes used while debugging sysbox/podman/binder |
 | `docs/screens/` | Reference screenshots |
@@ -221,13 +222,17 @@ over the game and leaves the tap to the user rather than bypassing that.
 
 ## Steam Deck bundle
 
-`bin/build-deck-bundle.sh [id]` builds `data/deck-dist/<id>/`, the folder to copy to the Deck (user guide:
-`deck/README.md`, installer: `deck/install.sh` + `Install-Lepton-Mantis.desktop`). In the runner
+`bin/build-deck-bundle.sh [id]` builds `data/deck-dist/<id>/` (Lepton's `.tar.gz`, `.sha256`, `.install.sh`),
+which goes into `bundle/` of the Deck's clone of this repo (user guide: `deck/README.md`). In the runner
 (`runner/build-deck-bundle.sh`) it copies the `gapps` stage, applies the patched entry,
 `patches/c2-input-surface.patch` and the add-on, sysbakes rootfully, then records that sysbake through
 `lepton-customize`'s own validation (`runner/deck-record-sysbake.py` swaps only the rootless helper for the
-prebuilt result) and packages with `lepton-customize package` as tool id `lepton_mantis`. The Deck runs Lepton's
-own installer (`--replace` on reinstall); games' data, sign-ins and Mantis setup stay in Steam's compatdata.
+prebuilt result) and packages with `lepton-customize package` as tool id `lepton_mantis`. On the Deck,
+`deck/update.sh` pulls, and `deck/install.sh` runs Lepton's own installer for a bundle newer than the
+installed one (`--replace`), then copies `addon/` and `patches/lepton-x86_64-entry` over the installed tool.
+Lepton's runtime fingerprint covers only the rootfs, `services.jar` and the sysbaked `packages.xml`, so add-on
+and entry changes ship by `git pull` alone; Android-side changes (stage, sysbake, buddy host apk, Mantis apk)
+need a new bundle.
 
 ## Host changes (docker host, root)
 

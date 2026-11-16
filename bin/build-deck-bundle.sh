@@ -1,6 +1,6 @@
 #!/bin/bash
-# Host-side: builds the Lepton + Mantis Steam Deck bundle in lepton-runner and assembles the folder to copy to
-# the Deck: data/deck-dist/<id>/ (bundle, checksum, Lepton's installer, deck/install.sh, deck/README.md).
+# Host-side: builds the Lepton + Mantis Steam Deck bundle in lepton-runner into data/deck-dist/<id>/
+# (bundle, checksum, Lepton's installer), for the Deck checkout's bundle/.
 # Usage: build-deck-bundle.sh [bundle-id]   (default mantis-<UTC date>-<time>)
 set -euo pipefail
 R="$(cd "$(dirname "$0")/.." && pwd)"
@@ -20,8 +20,5 @@ for suffix in .tar.gz .tar.gz.sha256 .install.sh; do
     docker cp "lepton-runner:$W/deck-dist/lepton-x86_64-$ID$suffix" "$OUT/"
 done
 docker exec lepton-runner sh -c "rm -f $W/deck-dist/lepton-x86_64-$ID.*"
-install -m 755 "$R/deck/install.sh" "$R/deck/Install-Lepton-Mantis.desktop" "$OUT/"
-install -m 644 "$R/deck/README.md" "$OUT/"
 (cd "$OUT" && sha256sum -c "lepton-x86_64-$ID.tar.gz.sha256")
-du -sh "$OUT"
-echo "Copy $OUT to the Deck's ~/Downloads/lepton-mantis/ (see deck/README.md)."
+echo "Copy to the Deck's checkout (see deck/README.md): scp $OUT/* deck@steamdeck:lepton-dev/bundle/"
