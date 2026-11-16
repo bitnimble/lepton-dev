@@ -1,3 +1,4 @@
 /data/
-/bundle/
+/bundle/*
+!/bundle/.gitkeep
 __pycache__/
