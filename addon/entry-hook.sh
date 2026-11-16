@@ -9,7 +9,7 @@ lepton_padmap_entry() {
         mode="$(python3 "$addon/ndk-mode.py" "$addon/ndk-modes" "${@: -1}" 2>/dev/null || true)"
         [[ -z "$mode" ]] || export LEPTON_NDK_TRANSLATION_MODE="$mode"
     fi
-    setsid "$addon/lepton-padmap" session </dev/null >/dev/null 2>&1 &
+    env -u LD_PRELOAD setsid "$addon/lepton-padmap" session </dev/null >/dev/null 2>&1 &
     exec > >(tee -a "$dir/lepton.log") 2>&1
     printf 'lepton-padmap: session %s, args: %s, NDK mode: %s\n' "$dir" "$*" "${LEPTON_NDK_TRANSLATION_MODE:-auto}"
     lepton_padmap_plain_gamescope

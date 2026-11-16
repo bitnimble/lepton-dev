@@ -140,7 +140,9 @@ Android boots in ~20s with software rendering. Lepton refuses an existing profil
 - Lepton ends the session when the game's process dies, and Android may kill a backgrounded game on a
   configuration change (`am_kill … resetConfig`, e.g. after `wm size`/rotation changes). Padmap's editor is an
   overlay window, so the game stays in front.
-- Steam launches occasionally exit within 30s of boot (cause not yet captured; see the session's `logcat-*`).
+- A launch can end within a minute of boot when the Play Store finishes updating Google Play services in the
+  background: Android force-stops `com.google.android.gms` ("pkg removed") and SIGKILLs apps using it, the game
+  included, and Lepton ends the session. The next launch runs on the updated services.
 - Lepton's `cmd` wrapper (`/system/bin/cmd`, so also `pm` and `adb install`) treats every install as the game
   and moves the game's installed dir into `/data/steam_app`. That leaves overlay whiteouts over the game's
   `baked/app_overlay/*.apk` and `lib/`; the running game survives on open files, but the next launch fails
