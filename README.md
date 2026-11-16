@@ -114,7 +114,8 @@ Android boots in ~20s with software rendering. Lepton refuses an existing profil
 | Fossify Calculator (x86_64) | Runs; injected taps work (`docs/screens/calculator-input.png`) |
 | AAAAXY 1.8.34 arm64-only | Renders in-game via `libndk_translation` (`docs/screens/aaaaxy-arm64.png`) |
 | Pokémon UNITE 1.25.1.1 (`jp.pokemon.pokemonunite`) | Guest account, onboarding, lobby with 3D models (`docs/screens/unite-lobby.png`) on `gapps` (appid 900002, light translator mode); bot match returns to the challenge screen after VS |
-| Mantis Gamepad Pro 3.4.9.1 (`app.mantispro.gamepad`) | Runs next to UNITE; "Sign in with Google" opens Play services' add-account form (needs a real account) |
+| Mantis Gamepad Pro 3.4.9.1 (`app.mantispro.gamepad`) | Signed in, buddy connected, virtual pad detected; a mapped pad button taps UNITE's Start (`docs/screens/mantis-mapped-start.png`) |
+| UNITE frame rate (software rendering, SurfaceFlinger `--timestats`) | ~25.5 fps on the challenge screen, ~23 fps on the 3D VS screen |
 
 ## Known issues
 
@@ -139,8 +140,11 @@ Android boots in ~20s with software rendering. Lepton refuses an existing profil
   validation ("installed codePath or app_overlay/base.apk missing"). Install other apps with `cmd_real`
   (`bin/install-mantis.sh`, `bin/mantis-buddy.sh`). Repair: replace the whiteouts with the files from
   `lepton-apkm/<hash>/` and re-extract `lib/arm64` from the arm64 split.
-- A portrait-only app (Mantis) rotates the whole display; Unity then loses its surface. Lock landscape:
-  `wm fixed-to-user-rotation enabled; wm user-rotation lock 0` (persists in the profile's `/data`).
+- A portrait-only app (Mantis) rotates the whole display; Unity then loses its surface. `start-buddy.sh`
+  locks the user rotation (persists in the profile's `/data`).
+- Child processes of a translated app fail to link: Mantis's periodic `su`/`sh` spawns log `CANNOT LINK
+  EXECUTABLE "sh": cannot locate symbol "__android_log_write" referenced by "/system/lib64/liblepton_ndk_auxv.so"`.
+- SurfaceFlinger `--latency` has no data (no present fences); `--timestats` gives per-layer FPS.
 - Toybox `grep -E` with alternations segfaults inside Android; grep logcat on the runner side (`bin/diag.sh`).
 
 ## Mantis buddy
@@ -171,9 +175,22 @@ which under `app_process` holds `mantis.dex`. The Mantis app then shows "Mantis 
 
 The daemon reads gamepads straight from `/dev/input/event*`. Lepton's gamepad passthrough binds Steam Input's
 virtual pads (`Microsoft X-Box 360 pad N`, 28de:11ff) present at launch, which is what a Deck provides;
-here `bin/steamlaunch.sh` starts the matching virtual pad first. Touches go through the daemon's InputManager
-injection, which the instrumentation's root permissions allow, so Android itself never needs `/dev/uinput`
-(and must not get it: a `chmod` there would change the host node through the bind mount).
+here `bin/steamlaunch.sh` starts the matching virtual pad first. Mantis grabs the pad (`EVIOCGRAB`) and
+injects touches. Its default engine ("Empusa") needs `/dev/uinput`, which Android doesn't get (the daemon runs
+as uid 1000, and a `chmod` there would change the host node through the bind mount); enable Mantis
+Settings → **Legacy Touch Engine** ("Orchid": InputManager injection, allowed by the instrumentation's root
+permissions). The app re-sends that choice whenever the buddy connects.
+
+Mantis also derives orientation from the display rotation the phone way (rotation 0 = portrait) and logs
+`OrientationCheck ... mismatch=true` with a 767x1279 overlay on Lepton's landscape-natural display, so
+`start-buddy.sh` presents the display as portrait-natural turned 90 degrees (`wm size <h>x<w>`,
+`wm user-rotation lock 1`). Lepton's host input arrives as injected display-coordinate events (device -1),
+so it isn't rotated twice.
+
+Mapping flow: Mantis home → Add Game → launch the game from its tile (spends a free credit) → floating icon →
+Key → press a pad button → drag the widget onto the target → close the editor. A mapped pad button pressing
+UNITE's Start reached the VS screen (`docs/screens/mantis-mapped-start.png`). A buddy restart re-arms the
+mapping on the next launch from Mantis.
 
 Mantis also ships its own ADB client (`libmantis_adb_crypto.so`) for Wi-Fi-debugging activation; the
 PC-activation path above avoids needing it.
@@ -188,8 +205,8 @@ Every root command was reviewed first by a no-context subagent for impact on the
   that uid mapping and so gets the heap too; system-heap allocations are not charged to the runner's memory
   cgroup.
 - `uinput` loaded (`/etc/modules-load.d/lepton-uinput.conf`), `/dev/uinput` owned by uid 165536 (mode 0600
-  kept), and event nodes of virtual (uinput) devices named `Empusa Virtual Touchscreen` or with ids 28de:11ff
-  owned by 165536 too, all via `/etc/udev/rules.d/70-lepton-uinput.rules` (`host/host-uinput.sh`). Whoever
+  kept), and event nodes of virtual (uinput) devices with ids 28de:11ff owned by 165536 too, both via
+  `/etc/udev/rules.d/70-lepton-uinput.rules` (`host/host-uinput.sh`). Whoever
   opens `/dev/uinput` can create virtual input devices on the host, including a keyboard that reaches the
   console (Ctrl+Alt+Del, SysRq); this host is headless.
 - Sysbox 0.7.1 installed manually (`host/host-stage-sysbox.sh`, `host/host-install-sysbox.sh`), skipping the
