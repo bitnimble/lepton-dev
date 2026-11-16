@@ -6,6 +6,7 @@ set -euo pipefail
 R="$(cd "$(dirname "$0")/.." && pwd)"
 W=/var/lib/containers/lepton
 ID="${1:-mantis-$(date -u +%Y%m%d-%H%M)}"
+[[ "$ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { echo "bundle id must be [A-Za-z0-9._-]: $ID" >&2; exit 1; }
 OUT="$R/data/deck-dist/$ID"
 [[ ! -e "$OUT" ]] || { echo "already built: $OUT" >&2; exit 1; }
 
