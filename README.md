@@ -127,14 +127,18 @@ Android boots in ~20s with software rendering. Lepton refuses an existing profil
 
 ## Known issues
 
-- The translator's heavy optimizer (tiered and heavy-optimize modes) loops forever in
-  `HeavyOptimizeRegion → ResolveJumps → SplitBasicBlock` on an ARM64 jump to a `NOP`; in UNITE a comparator in
-  `libMSDKCore.so` (file offset `0x24cd40`, found with gdb: `r14` in the `HeavyOptimizeRegion(unsigned long)` frame
-  is the guest PC), hanging it at "Loading..." while other threads spin waiting. With `tiered`, the entry hook
-  runs `addon/arm64_branch_nops.py` on the game's libraries first, retargeting such jumps past the NOPs (203 in
-  `libMSDKCore.so`); UNITE then gets past loading in tiered mode. It skips the ACE anti-cheat libraries
-  (`libanogs.so`, `libanort.so`), with which UNITE crashed. UNITE defaults to light mode (`addon/ndk-modes`)
-  because the patch modifies game code its anti-cheat could notice; `test/arm64_branch_nops_test.py` checks it.
+- The API 34 r14 translator's heavy optimizer (tiered and heavy-optimize modes) loops forever in
+  `HeavyOptimizeRegion → ResolveJumps → SplitBasicBlock` on a region where one jump targets an ARM64 `NOP` and
+  another the instruction after it (in UNITE, a comparator in `libMSDKCore.so` at `0x24cd40`; gdb: `r14` in the
+  `HeavyOptimizeRegion(unsigned long)` frame is the guest PC), hanging the game at "Loading...". A `NOP` emits no
+  code, so both addresses share one branch-target position; after the split for the later one,
+  `UpdateBranchTargetsAfterSplit` only walks forward, leaving the `NOP`'s entry on the old block with an iterator
+  into the new one, and the next split walks that foreign list forever. The same code is in AOSP's Berberis
+  (`heavy_optimizer/riscv64/frontend.cc`). `addon/ndk-translation/fix.py` writes a fixed copy of the translator
+  to the tool's `images/rootfs_overlay/` (the walk also moves earlier entries sharing the position; it replaces
+  the out-of-line function and the copy inlined into `ResolveJumps`, sources in `addon/ndk-translation/*.S`,
+  checked by `test/ndk_translation_fix_test.py`). Lepton bind-mounts the overlay over the rootfs, while its NDK
+  shim's checksum still sees the original; no game file changes. UNITE then runs tiered with stock libraries.
 - UNITE in the runner sometimes dies within a minute of starting: an ART `ThreadList::Register` SIGSEGV via the
   translator's `AttachCurrentThread` trampoline ("Cannot process signal 11"), after ~1700 threads; the runner's
   UNITE shows "Offline Mode", so its network SDK is likely retrying in a loop.
@@ -167,8 +171,7 @@ Android boots in ~20s with software rendering. Lepton refuses an existing profil
 The patched Steam entry (`patches/entry-hook.patch`) sources `entry-hook.sh` on `waitforexitandrun`, so it
 runs for Steam launches and for Lepton's "Add Google game" steps alike. Per launch it makes
 `~/lepton-logs/<appid>-<date>-<time>/` (`latest` symlink, last 20 kept), tees the entry's output into
-`lepton.log`, picks the NDK translation mode from `ndk-modes` by the `.apkm`'s package (unless already set),
-puts a copy of `/usr/bin/gamescope` without file capabilities (`~/.cache/lepton-padmap/bin/`) first on `PATH`, and
+`lepton.log`, writes the fixed translator into the overlay (`ndk-translation/fix.py`, see Known issues), puts a copy of `/usr/bin/gamescope` without file capabilities (`~/.cache/lepton-padmap/bin/`) first on `PATH`, and
 starts `lepton-padmap session` detached. The copy is for Steam's performance overlay: `mangoapp` reads the game
 window's `/proc/<pid>/fdinfo`, which for Lepton's nested gamescope with SteamOS's `cap_sys_nice` is unreadable, and
 it aborts on that in a loop (each core dump freezes the game for about a second) until systemd stops restarting it. The session waits for boot, streams `logcat -b all` to `logcat-NNN` (32 MB parts, newest four kept),

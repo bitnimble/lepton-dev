@@ -34,10 +34,11 @@ either way. Restart Steam after a bundle update.
 2. Gaming Mode, the game's **Controller settings > Edit Layout > Default Action Set > Always-On Command >
    System > Touchscreen Native Support**, so taps on the screen reach Android as real touches.
 
-Pokémon UNITE gets the light ARM translator automatically (`ndk-modes` in the add-on). The faster tiered mode
-is CPU-cheaper but opt-in: launch option `LEPTON_NDK_TRANSLATION_MODE=tiered %command%`. For it, the add-on patches
-jumps in the game's libraries that hang the translator (equivalent code, but modified, so UNITE's anti-cheat could
-in principle notice); they stay patched afterwards, and reinstalling the game restores them.
+Lepton picks the ARM translator mode per game: the fast tiered mode when the game's code allows it (Pokémon
+UNITE does), falling back to the light mode for the next launch if a game exits early in tiered. The add-on
+supplies a fixed copy of Google's translator, without which tiered mode hangs UNITE at "Loading..."; game files
+are untouched. If a game misbehaves in tiered, launch option `LEPTON_NDK_TRANSLATION_MODE=light-translate-or-interpret
+%command%` forces the light mode.
 
 ## Controls
 

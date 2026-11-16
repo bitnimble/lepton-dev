@@ -1,3 +1,0 @@
-# <package> <LEPTON_NDK_TRANSLATION_MODE>, applied when a launch doesn't set the mode itself
-# UNITE needs arm64_branch_nops.py's library patch for tiered; opt in per launch, its anti-cheat may notice
-jp.pokemon.pokemonunite light-translate-or-interpret
