@@ -189,6 +189,8 @@ report() {
         echo "== podman"; podman --version; podman ps -a --format '{{.Names}} {{.Status}}'
         echo "== resources"; df -h "$HOME"; free -h
     } >"$tmp/$name/system.txt" 2>&1
+    journalctl -k -b -o short-precise --no-pager >"$tmp/$name/kernel.txt" 2>&1
+    journalctl --user -b -o short-precise --no-pager | tail -n 50000 >"$tmp/$name/user-journal.txt" 2>&1
     while IFS= read -r session; do
         cp -r "$session" "$tmp/$name/sessions/"
     done < <(ls -1dt "$LOGS"/*-*/ 2>/dev/null | head -n 5)

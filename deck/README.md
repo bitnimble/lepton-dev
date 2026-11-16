@@ -76,7 +76,7 @@ Every launch writes `~/lepton-logs/<appid>-<date>-<time>/` (the newest is `~/lep
 | `tombstones/`, `anr/`, `system/dropbox/` | Native crashes, ANRs and crash reports from that launch |
 
 To report a problem, use the desktop icon **Lepton: Save crash report** (or `~/.local/bin/lepton-padmap report`):
-it writes `~/Desktop/lepton-report-<date>.tar.gz` with the last five launches, Lepton's own logcats, your layouts
-and system details. Send that file. **Lepton: Open logs** opens the folder.
+it writes `~/Desktop/lepton-report-<date>.tar.gz` with the last five launches, Lepton's own logcats, your layouts,
+system details and this boot's kernel and session logs (GPU resets, Gamescope), so save it before rebooting. Send that file. **Lepton: Open logs** opens the folder.
 
 Padmap is restarted automatically if it stops (up to five failed starts per launch, logged in `session.log`).
