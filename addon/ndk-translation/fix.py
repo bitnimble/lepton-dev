@@ -39,8 +39,10 @@ def main():
         print(__doc__, file=sys.stderr)
         return 2
     source, target = (os.path.join(root, LIB) for root in sys.argv[1:])
-    with open(source, "rb") as handle:
-        original = handle.read()
+    original = b""
+    if os.path.exists(source):
+        with open(source, "rb") as handle:
+            original = handle.read()
     if hashlib.sha256(original).hexdigest() != REVIEWED_SHA256:
         if os.path.exists(target):
             os.remove(target)
@@ -53,10 +55,14 @@ def main():
                 return 0
     os.makedirs(os.path.dirname(target), exist_ok=True)
     fd, temp = tempfile.mkstemp(dir=os.path.dirname(target))
-    with os.fdopen(fd, "wb") as handle:
-        handle.write(data)
-    os.chmod(temp, 0o644)
-    os.replace(temp, target)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+        os.chmod(temp, 0o644)
+        os.replace(temp, target)
+    except BaseException:
+        os.remove(temp)
+        raise
     print(f"wrote {target}")
     return 0
 
