@@ -1,8 +1,156 @@
+diff --git a/src/app/controlMessage/TextControlMessage.ts b/src/app/controlMessage/TextControlMessage.ts
+index a3af71f..44aa6ba 100644
+--- a/src/app/controlMessage/TextControlMessage.ts
++++ b/src/app/controlMessage/TextControlMessage.ts
+@@ -19,7 +19,7 @@ export class TextControlMessage extends ControlMessage {
+      * @override
+      */
+     public toBuffer(): Buffer {
+-        const length = this.text.length;
++        const length = Buffer.byteLength(this.text);
+         const buffer = Buffer.alloc(length + 1 + TextControlMessage.TEXT_SIZE_FIELD_LENGTH);
+         let offset = 0;
+         offset = buffer.writeUInt8(this.type, offset);
+diff --git a/src/app/googDevice/SoftKeyboardInput.ts b/src/app/googDevice/SoftKeyboardInput.ts
+new file mode 100644
+index 0000000..ddd6370
+--- /dev/null
++++ b/src/app/googDevice/SoftKeyboardInput.ts
+@@ -0,0 +1,90 @@
++import { ControlMessage } from '../controlMessage/ControlMessage';
++import { KeyCodeControlMessage } from '../controlMessage/KeyCodeControlMessage';
++import { TextControlMessage } from '../controlMessage/TextControlMessage';
++import KeyEvent from './android/KeyEvent';
++import { KeyToCodeMap } from './KeyToCodeMap';
++
++// Kept in the field so a backspace on "empty" still produces an input event to forward
++const SENTINEL = ' ';
++
++export interface SoftKeyboardTarget {
++    sendMessage(message: ControlMessage): void;
++}
++
++/** Forwards text typed into a focused off-screen field, which is what opens a phone's on-screen keyboard. */
++export class SoftKeyboardInput {
++    private readonly input: HTMLInputElement;
++    private lastValue = SENTINEL;
++
++    constructor(private readonly target: SoftKeyboardTarget) {
++        const input = document.createElement('input');
++        input.type = 'text';
++        input.autocomplete = 'off';
++        input.spellcheck = false;
++        input.setAttribute('autocapitalize', 'off');
++        input.setAttribute('autocorrect', 'off');
++        input.setAttribute('aria-label', 'Keyboard input');
++        // font-size 16px: smaller makes iOS zoom the page on focus
++        input.style.cssText =
++            'position:fixed;left:0;bottom:0;width:1px;height:1px;opacity:0;font-size:16px;border:0;padding:0;';
++        input.value = SENTINEL;
++        input.addEventListener('input', this.onInput);
++        input.addEventListener('keydown', this.onKeyDown);
++        input.addEventListener('compositionend', this.onInput);
++        document.body.appendChild(input);
++        this.input = input;
++    }
++
++    public focus(): void {
++        this.input.focus();
++        this.input.setSelectionRange(this.input.value.length, this.input.value.length);
++    }
++
++    public blur(): void {
++        this.input.blur();
++    }
++
++    public release(): void {
++        this.input.remove();
++    }
++
++    private onInput = (event: Event): void => {
++        const value = this.input.value;
++        const previous = this.lastValue;
++        let prefix = 0;
++        while (prefix < value.length && prefix < previous.length && value[prefix] === previous[prefix]) {
++            prefix++;
++        }
++        for (let i = previous.length - prefix; i > 0; i--) {
++            this.sendKey(KeyEvent.KEYCODE_DEL);
++        }
++        const inserted = value.slice(prefix);
++        if (inserted) {
++            this.target.sendMessage(new TextControlMessage(inserted));
++        }
++        this.lastValue = value;
++        if (!(event as InputEvent).isComposing && (!value.startsWith(SENTINEL) || value.length > 64)) {
++            this.reset();
++        }
++    };
++
++    private onKeyDown = (event: KeyboardEvent): void => {
++        // Physical keys with a code are sent by KeyInputHandler, which also blocks the default insertion
++        if (KeyToCodeMap.get(event.code) || event.key !== 'Enter') {
++            return;
++        }
++        event.preventDefault();
++        this.sendKey(KeyEvent.KEYCODE_ENTER);
++        this.reset();
++    };
++
++    private reset(): void {
++        this.input.value = SENTINEL;
++        this.lastValue = SENTINEL;
++    }
++
++    private sendKey(keyCode: number): void {
++        this.target.sendMessage(new KeyCodeControlMessage(KeyEvent.ACTION_DOWN, keyCode, 0, 0));
++        this.target.sendMessage(new KeyCodeControlMessage(KeyEvent.ACTION_UP, keyCode, 0, 0));
++    }
++}
 diff --git a/src/app/googDevice/client/StreamClientScrcpy.ts b/src/app/googDevice/client/StreamClientScrcpy.ts
-index ba13d4b..93e7176 100644
+index ba13d4b..2595329 100644
 --- a/src/app/googDevice/client/StreamClientScrcpy.ts
 +++ b/src/app/googDevice/client/StreamClientScrcpy.ts
-@@ -435,7 +435,8 @@ export class StreamClientScrcpy
+@@ -12,6 +12,7 @@ import FilePushHandler from '../filePush/FilePushHandler';
+ import DragAndPushLogger from '../DragAndPushLogger';
+ import { KeyEventListener, KeyInputHandler } from '../KeyInputHandler';
+ import { KeyCodeControlMessage } from '../../controlMessage/KeyCodeControlMessage';
++import { SoftKeyboardInput } from '../SoftKeyboardInput';
+ import { BasePlayer, PlayerClass } from '../../player/BasePlayer';
+ import GoogDeviceDescriptor from '../../../types/GoogDeviceDescriptor';
+ import { ConfigureScrcpy } from './ConfigureScrcpy';
+@@ -55,6 +56,7 @@ export class StreamClientScrcpy
+     private joinedStream = false;
+     private requestedVideoSettings?: VideoSettings;
+     private touchHandler?: FeaturedInteractionHandler;
++    private softKeyboard?: SoftKeyboardInput;
+     private moreBox?: GoogMoreBox;
+     private player?: BasePlayer;
+     private filePushHandler?: FilePushHandler;
+@@ -267,6 +269,8 @@ export class StreamClientScrcpy
+         this.filePushHandler = undefined;
+         this.touchHandler?.release();
+         this.touchHandler = undefined;
++        this.softKeyboard?.release();
++        this.softKeyboard = undefined;
+         window.removeEventListener('resize', this.onWindowResize);
+         if (this.resizeTimeoutId !== undefined) {
+             clearTimeout(this.resizeTimeoutId);
+@@ -406,8 +410,13 @@ export class StreamClientScrcpy
+     public setHandleKeyboardEvents(enabled: boolean): void {
+         if (enabled) {
+             KeyInputHandler.addEventListener(this);
++            if (!this.softKeyboard) {
++                this.softKeyboard = new SoftKeyboardInput(this);
++            }
++            this.softKeyboard.focus();
+         } else {
+             KeyInputHandler.removeEventListener(this);
++            this.softKeyboard?.blur();
+         }
+     }
+ 
+@@ -435,7 +444,8 @@ export class StreamClientScrcpy
          const body = document.body;
          const width = (body.clientWidth - this.controlButtons.clientWidth) & ~15;
          const height = body.clientHeight & ~15;

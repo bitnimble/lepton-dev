@@ -85,8 +85,10 @@ Phone browsers get real multi-touch: each browser touch point becomes its own An
 simultaneous CDP touches showed as `P: 2/2` with `settings put system pointer_location 1`).
 `runner/ws-scrcpy-lepton.patch` adds an **Open Mantis** toolbar button (gamepad icon; server route
 `POST /lepton/launch?udid=…&app=mantis` runs `am start -n app.mantispro.gamepad/.MainActivity`; Back returns
-to the game) and keeps fit-to-screen encode bounds landscape, so a portrait phone still gets a landscape-sized
-stream. Encoder Surface input needs `debug.stagefright.c2inputsurface=-1` (`patches/c2-input-surface.patch`).
+to the game), keeps fit-to-screen encode bounds landscape, so a portrait phone still gets a landscape-sized
+stream, and makes the keyboard toggle work on phones: it focuses an off-screen field (opening the on-screen
+keyboard) whose edits are diffed and forwarded as text injection + `DEL`/`ENTER` keys; physical keys still go
+through scrcpy key events. Text injection is limited to characters Android's key map can type (ASCII). Encoder Surface input needs `debug.stagefright.c2inputsurface=-1` (`patches/c2-input-surface.patch`).
 
 Steam launches stream `logcat -b all` to `run/<ctx>.logcat.stream` (Lepton's own shutdown capture misses
 early exits).
