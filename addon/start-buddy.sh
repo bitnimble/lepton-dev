@@ -15,17 +15,6 @@ if [ ! -f "$M/bundles/$BUNDLE/mantis.dex" ]; then
 fi
 [ -f "$M/bundles/$BUNDLE/mantis.dex" ] || { echo "no Mantis bundle in $M/bundles; activate Mantis once first" >&2; exit 1; }
 
-# Mantis assumes a phone (rotation 0 = portrait) and sizes its overlay and touch space from that, so present
-# the landscape display as a portrait-natural one turned 90 degrees
-physical=$(wm size | sed -n 's/^Physical size: //p')
-width=${physical%x*}
-height=${physical#*x}
-if [ "$width" -gt "$height" ]; then
-    wm size "${height}x${width}"
-    wm fixed-to-user-rotation enabled
-    wm user-rotation lock 1
-fi
-
 # podman exec lacks init's service environment; without BOOTCLASSPATH, `am instrument` (an app_process) exits silently
 for kv in $(tr '\0' '\n' </proc/"$(pidof -s adbd)"/environ); do
     case "$kv" in ANDROID_* | *CLASSPATH=*) export "$kv" ;; esac

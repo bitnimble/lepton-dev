@@ -1,0 +1,13 @@
+--- a/compat_tool/lepton-x86_64-entry
++++ b/compat_tool/lepton-x86_64-entry
+@@ -55,6 +55,10 @@
+     exit 1
+ fi
+ 
++if [[ "${1:-}" == waitforexitandrun && -f "$TOOL/lepton-mantis/entry-hook.sh" ]]; then
++    source "$TOOL/lepton-mantis/entry-hook.sh"
++fi
++
+ if [[ "${1:-}" == waitforexitandrun && "${LEPTON_NO_BRIDGE:-false}" != true ]] && ! inside_bridge; then
+     # Read data, never shell code. Unmarked/older tools keep the Deck path.
+     profile=""

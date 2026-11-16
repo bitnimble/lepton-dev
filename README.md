@@ -1,16 +1,21 @@
 # lepton-dev
 
 Headless dev loop for [Lepton x86_64](https://github.com/pjohno/lepton-x86_64) (community x86_64 port of
-Valve's Lepton, Android 14 in podman) on the docker host, without a GPU or Steam.
+Valve's Lepton, Android 14 in podman) on the docker host, without a GPU or Steam, and the Steam Deck bundle it
+produces: Lepton with Google Play services, ARM64 translation and the Mantis Gamepad Pro add-on
+([deck/README.md](deck/README.md)).
 
 ## Layout
 
 | Path | Contents |
 | --- | --- |
-| `runner/` | Files that run **inside** `lepton-runner`: image (`Containerfile`), env, launch/sysbake/stage scripts |
+| `runner/` | Files that run **inside** `lepton-runner`: image (`Containerfile`), env, launch/sysbake/stage/bundle scripts |
 | `bin/` | Host-side helpers (run from this dev container via the docker socket) |
 | `host/` | Scripts that ran as **root on the docker host** (via privileged `nsenter`); see Host changes |
-| `patches/` | Patches to the release's `compat_tool/liblepton/` (`*.patch`), with the patched `liblepton.sh` and `properties.sh` that `bin/push.sh` installs |
+| `addon/` | The Lepton + Mantis add-on, shipped as a bundle's `compat_tool/lepton-mantis/` |
+| `mantis-buddy/host/` | Source of the buddy host apk (`BuddyHost` instrumentation) |
+| `deck/` | Deck-side installer and user guide, copied next to the bundle |
+| `patches/` | Patches to the release's `compat_tool/` (`*.patch`), with the patched `liblepton.sh`, `properties.sh` and `lepton-x86_64-entry` that `bin/push.sh` installs |
 | `diag/` | Probes used while debugging sysbox/podman/binder |
 | `docs/screens/` | Reference screenshots |
 | `data/` (gitignored) | Release bundle, Google r14 system image, APK/APKM files, sysbox sources/builds, screenshots |
@@ -79,7 +84,8 @@ bin/shot.sh <ctx> <name>; bin/tap.sh <ctx> <name> x y [x y…]      # 150ms pres
 bin/burst.sh <ctx> <name> [count] [seconds]                        # screenshot series
 diag/thread-cpu.sh, diag/thread-waits.sh, diag/net-rate.sh, diag/sockets.sh                # hang triage
 bin/pad.sh press a | stick l 20000 0 | trigger r 255                # virtual Steam-Input-style pad
-bin/mantis-buddy.sh [ctx]; bin/install-mantis.sh [ctx]              # Mantis buddy (re)start; Mantis install
+bin/lepton-mantis.sh install|buddy [ctx] | report                   # add-on CLI, run in the runner
+bin/build-deck-bundle.sh [id]                                       # Steam Deck bundle -> data/deck-dist/<id>/
 ```
 
 ### Browser remote control
@@ -97,12 +103,12 @@ stream, and makes the keyboard toggle work on phones: it focuses an off-screen f
 keyboard) whose edits are diffed and forwarded as text injection + `DEL`/`ENTER` keys; physical keys still go
 through scrcpy key events. Text injection is limited to characters Android's key map can type (ASCII). Encoder Surface input needs `debug.stagefright.c2inputsurface=-1` (`patches/c2-input-surface.patch`).
 
-Steam launches stream `logcat -b all` to `run/<ctx>.logcat.stream` (Lepton's own shutdown capture misses
-early exits).
-
 `.apkm` bundles need a Steam-style launch (`bin/steamlaunch.sh <appid> <file.apkm> [wait]`, which runs
-`runner/run-steamlaunch-rootful.sh`; context `steamlaunch-<appid>`, verb `waitforexitandrun -- <path>`). A session's container IP is shown by
-`lepton ps`; its adbd (TCP 5555, `ro.adb.secure=0`) accepts `adb connect` from the runner.
+`runner/run-steamlaunch-rootful.sh`; context `steamlaunch-<appid>`, verb `waitforexitandrun -- <path>`). It goes
+through the stage's Steam entry (`compat_tool/lepton-x86_64-entry`, with `LEPTON_NO_BRIDGE=true` in place of the
+Deck's Gamescope bridge), so the add-on's session hook runs exactly as on a Deck; its logs land in the runner's
+`/var/lib/containers/lepton/home/lepton-logs/latest/`. A session's container IP is shown by `lepton ps`; its adbd
+(TCP 5555, `ro.adb.secure=0`) accepts `adb connect` from the runner.
 
 Android boots in ~20s with software rendering. Lepton refuses an existing profile whose runtime fingerprint
 (rootfs + sysbake) differs, so switching a game to another stage needs a new app id or a reset.
@@ -116,6 +122,7 @@ Android boots in ~20s with software rendering. Lepton refuses an existing profil
 | Pokémon UNITE 1.25.1.1 (`jp.pokemon.pokemonunite`) | Guest account, onboarding, lobby with 3D models (`docs/screens/unite-lobby.png`) on `gapps` (appid 900002, light translator mode); bot match returns to the challenge screen after VS |
 | Mantis Gamepad Pro 3.4.9.1 (`app.mantispro.gamepad`) | Signed in, buddy connected, virtual pad detected; a mapped pad button taps UNITE's Start (`docs/screens/mantis-mapped-start.png`) |
 | UNITE frame rate (software rendering, SurfaceFlinger `--timestats`) | ~25.5 fps on the challenge screen, ~23 fps on the 3D VS screen |
+| Steam Deck bundle (`mantis-20261116`) | Packaged and validated by `lepton-customize`; not yet run on a Deck |
 
 ## Known issues
 
@@ -133,14 +140,14 @@ Android boots in ~20s with software rendering. Lepton refuses an existing profil
 - Lepton ends the session when the game's process dies, and Android may kill a backgrounded game on a
   configuration change (`am_kill … resetConfig`). Open other apps over the game (Mantis button, Back to return)
   rather than going Home.
-- Steam launches occasionally exit within 30s of boot (cause not yet captured; see the logcat stream).
+- Steam launches occasionally exit within 30s of boot (cause not yet captured; see the session's `logcat.txt`).
 - Lepton's `cmd` wrapper (`/system/bin/cmd`, so also `pm` and `adb install`) treats every install as the game
   and moves the game's installed dir into `/data/steam_app`. That leaves overlay whiteouts over the game's
   `baked/app_overlay/*.apk` and `lib/`; the running game survives on open files, but the next launch fails
   validation ("installed codePath or app_overlay/base.apk missing"). Install other apps with `cmd_real`
-  (`bin/install-mantis.sh`, `bin/mantis-buddy.sh`). Repair: replace the whiteouts with the files from
+  (as `addon/lepton-mantis` does). Repair: replace the whiteouts with the files from
   `lepton-apkm/<hash>/` and re-extract `lib/arm64` from the arm64 split.
-- A portrait-only app (Mantis) rotates the whole display; Unity then loses its surface. `start-buddy.sh`
+- A portrait-only app (Mantis) rotates the whole display; Unity then loses its surface. `addon/orient-display.sh`
   locks the user rotation (persists in the profile's `/data`).
 - Child processes of a translated app fail to link: Mantis's periodic `su`/`sh` spawns log `CANNOT LINK
   EXECUTABLE "sh": cannot locate symbol "__android_log_write" referenced by "/system/lib64/liblepton_ndk_auxv.so"`.
@@ -160,8 +167,8 @@ Activation: Mantis is signed in and its bundle installed via the APK's documente
 credential it consumes is backed up at `/root/mantis-enrollment.bak` in the runner). Its own launcher then
 fails (the `app_process` problem above).
 
-`bin/mantis-buddy.sh [ctx]` starts the daemon instead: it installs `data/mantis-buddy/host.apk`
-(`mantis-buddy/host/build.sh`) and runs `mantis-buddy/start-buddy.sh` in the guest, which does
+`addon/start-buddy.sh` starts the daemon instead, from `data/mantis-buddy/host.apk`
+(`mantis-buddy/host/build.sh`): it runs
 `am instrument --abi arm64-v8a --no-hidden-api-checks lepton.mantisbuddy/.BuddyHost` as root. That forks
 `com.android.DeviceAsWebcam` (uid 1000, so `primaryCpuAbi` is non-null and the ABI override applies) with the
 aarch64 translator. Debuggable builds let a root caller skip the instrumentation signature check, and an
@@ -171,7 +178,6 @@ boot-parent `DexClassLoader` (the target apk bundles a clashing kotlin), a libra
 `System.unchangeableProps`, which the daemon reads to find its bundle. It also re-parents the system class
 loader onto that loader: JNI `FindClass` on the daemon's native threads resolves through the system loader,
 which under `app_process` holds `mantis.dex`. The Mantis app then shows "Mantis Buddy Connected".
-`runner/run-steamlaunch-rootful.sh` starts the buddy after boot whenever the host apk is installed.
 
 The daemon reads gamepads straight from `/dev/input/event*`. Lepton's gamepad passthrough binds Steam Input's
 virtual pads (`Microsoft X-Box 360 pad N`, 28de:11ff) present at launch, which is what a Deck provides;
@@ -183,7 +189,7 @@ permissions). The app re-sends that choice whenever the buddy connects.
 
 Mantis also derives orientation from the display rotation the phone way (rotation 0 = portrait) and logs
 `OrientationCheck ... mismatch=true` with a 767x1279 overlay on Lepton's landscape-natural display, so
-`start-buddy.sh` presents the display as portrait-natural turned 90 degrees (`wm size <h>x<w>`,
+`addon/orient-display.sh` presents the display as portrait-natural turned 90 degrees (`wm size <h>x<w>`,
 `wm user-rotation lock 1`). Lepton's host input arrives as injected display-coordinate events (device -1),
 so it isn't rotated twice.
 
@@ -194,6 +200,34 @@ mapping on the next launch from Mantis.
 
 Mantis also ships its own ADB client (`libmantis_adb_crypto.so`) for Wi-Fi-debugging activation; the
 PC-activation path above avoids needing it.
+
+## Add-on (`addon/`, shipped as `compat_tool/lepton-mantis/`)
+
+The patched Steam entry (`patches/entry-hook.patch`) sources `entry-hook.sh` on `waitforexitandrun`, so it
+runs for Steam launches and for Lepton's "Add Google game" steps alike. Per launch it makes
+`~/lepton-logs/<appid>-<date>-<time>/` (`latest` symlink, last 20 kept), tees the entry's output into
+`lepton.log`, picks the NDK translation mode from `ndk-modes` by the `.apkm`'s package (unless already set), and
+starts `lepton-mantis session` detached. The session waits for boot, streams `logcat -b all` to `logcat.txt`,
+installs Mantis (`mantis.apkm`) and the buddy host with `cmd_real`, runs `orient-display.sh`, then every 5s
+runs the staged PC-activation script, (re)starts the buddy (5 failed starts max), opens Mantis once the game is
+the top resumed activity, and copies new tombstones/ANRs/dropbox entries out of the profile. All of it is
+logged in `session.log`. `lepton-mantis report` tars the last 5 sessions, Lepton's logcats and system details
+to `~/Desktop/lepton-report-<date>.tar.gz`. `LEPTON_MANTIS=0` skips Mantis, `LEPTON_MANTIS_OPEN=0` keeps it
+closed.
+
+Mantis arms a mapping only from its Flutter **Launch Game** button (no exported intent; uiautomator can't
+drive it, Lepton has no AccessibilityManager), which spends a credit on the free tier. The add-on opens Mantis
+over the game and leaves the tap to the user rather than bypassing that.
+
+## Steam Deck bundle
+
+`bin/build-deck-bundle.sh [id]` builds `data/deck-dist/<id>/`, the folder to copy to the Deck (user guide:
+`deck/README.md`, installer: `deck/install.sh` + `Install-Lepton-Mantis.desktop`). In the runner
+(`runner/build-deck-bundle.sh`) it copies the `gapps` stage, applies the patched entry,
+`patches/c2-input-surface.patch` and the add-on, sysbakes rootfully, then records that sysbake through
+`lepton-customize`'s own validation (`runner/deck-record-sysbake.py` swaps only the rootless helper for the
+prebuilt result) and packages with `lepton-customize package` as tool id `lepton_mantis`. The Deck runs Lepton's
+own installer (`--replace` on reinstall); games' data, sign-ins and Mantis setup stay in Steam's compatdata.
 
 ## Host changes (docker host, root)
 

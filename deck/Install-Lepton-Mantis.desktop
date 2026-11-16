@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Install Lepton + Mantis
+Comment=Install or update the Lepton + Mantis compatibility tool from this folder
+Exec=bash -c 'exec konsole -e bash "$(dirname "$1")/install.sh" --pause' _ %k
+Icon=system-software-install
+Terminal=false

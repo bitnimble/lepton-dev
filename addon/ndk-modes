@@ -1,0 +1,3 @@
+# <package> <LEPTON_NDK_TRANSLATION_MODE>, applied when a launch doesn't set the mode itself
+# UNITE's MSDK threads hang in the tiered translator's heavy optimizer
+jp.pokemon.pokemonunite light-translate-or-interpret

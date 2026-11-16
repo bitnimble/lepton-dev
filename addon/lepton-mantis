@@ -1,0 +1,188 @@
+#!/usr/bin/env bash
+# Lepton + Mantis host-side helper; runs wherever Lepton's podman containers live (Steam Deck or lepton-runner).
+#   lepton-mantis session             per-launch watcher (started by entry-hook.sh)
+#   lepton-mantis install CONTEXT     install Mantis and the buddy host into a running context
+#   lepton-mantis buddy CONTEXT       (re)start the Mantis buddy in a running context
+#   lepton-mantis report              bundle recent logs into ~/Desktop/lepton-report-*.tar.gz
+# A context is "steamlaunch-<Steam AppID>" (see `lepton ps`). Set LEPTON_MANTIS=0 in a game's launch options
+# to skip Mantis, LEPTON_MANTIS_OPEN=0 to not open Mantis over the game at startup.
+set -uo pipefail
+ADDON="$(cd -- "$(dirname -- "$(realpath -e -- "${BASH_SOURCE[0]}")")" && pwd -P)"
+LOGS="${LEPTON_LOG_DIR:-$HOME/lepton-logs}"
+MANTIS=app.mantispro.gamepad
+STAGED="/sdcard/Android/data/$MANTIS/files"
+SPLITS=(base.apk split_config.arm64_v8a.apk split_config.xhdpi.apk split_config.en.apk)
+KEEP_SESSIONS=20
+C=""
+FAILS=0
+
+log() { printf '%(%F %T)T %s\n' -1 "$*"; }
+guest() { podman exec "$C" "$@"; }
+guest_script() { podman exec -i "$C" sh -s < "$ADDON/$1"; }
+running() { [[ "$(podman container inspect -f '{{.State.Running}}' "$C" 2>/dev/null)" == true ]]; }
+booted() { [[ "$(guest getprop sys.boot_completed 2>/dev/null)" == 1 ]]; }
+installed() { guest cmd_real package path "$1" >/dev/null 2>&1; }
+buddy_running() { guest pidof "$MANTIS:i" >/dev/null 2>&1; }
+buddy_installed() { guest sh -c 'ls /data/local/tmp/mantis/bundles/*/mantis.dex' >/dev/null 2>&1; }
+activation_staged() { guest sh -c "[ -f '$STAGED/buddy-enrollment' ]" 2>/dev/null; }
+
+wait_for() {
+    local seconds="$1" i
+    shift
+    for ((i = 0; i < seconds; i += 2)); do
+        "$@" && return 0
+        sleep 2
+    done
+    return 1
+}
+
+game_in_front() {
+    local game
+    game="$(guest getprop lepton.active_app_id 2>/dev/null)"
+    [[ -n "$game" ]] && guest dumpsys activity activities 2>/dev/null | grep -q "topResumedActivity=.* $game/"
+}
+
+main() {
+    case "${1:-}" in
+    session) session ;;
+    install) C="lepton-${2:?context}"; install_mantis && install_host ;;
+    buddy) C="lepton-${2:?context}"; guest_script orient-display.sh && guest_script start-buddy.sh ;;
+    report) report ;;
+    *) sed -n '2,8p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2 ;;
+    esac
+}
+
+session() {
+    DIR="${LEPTON_SESSION_DIR:?}"
+    DATA="${STEAM_COMPAT_DATA_PATH:-/nonexistent}/baked/data_overlay"
+    STARTED="$(date +%s)"
+    C="lepton-steamlaunch-${SteamAppId:?}"
+    exec >>"$DIR/session.log" 2>&1
+    log "watching $C (add-on $ADDON)"
+    # Steam's reaper ends this with the game, so crash files are collected as they appear, not only at the end.
+    trap 'collect; log "stopped"; exit 0' TERM INT
+    wait_for 600 running || { log "container never started; see lepton.log"; exit 0; }
+    wait_for 600 booted || { log "Android didn't finish booting; see lepton.log"; collect; exit 0; }
+    log "Android booted"
+    guest logcat -b all -v threadtime >"$DIR/logcat.txt" 2>&1 &
+    local mantis="${LEPTON_MANTIS:-1}" open="${LEPTON_MANTIS_OPEN:-1}" tick=0
+    if [[ "$mantis" == 0 ]]; then
+        log "Mantis disabled (LEPTON_MANTIS=0)"
+        open=0
+    else
+        install_mantis
+        install_host
+        guest_script orient-display.sh
+    fi
+    while running; do
+        [[ "$mantis" == 0 ]] || buddy_keepalive
+        if [[ "$open" == 1 ]] && game_in_front; then
+            log "game in front; opening Mantis (tap the game's tile, then Launch Game, to enable its mapping)"
+            guest am start -n "$MANTIS/.MainActivity" >/dev/null
+            open=0
+        fi
+        ((tick++ % 6)) || collect
+        sleep 5
+    done
+    collect
+    log "session ended"
+    prune
+}
+
+install_mantis() {
+    installed "$MANTIS" && return 0
+    [[ -f "$ADDON/mantis.apkm" ]] || { log "no mantis.apkm in the add-on; install Mantis yourself"; return 1; }
+    log "installing Mantis"
+    local tmp session apk
+    tmp="$(mktemp -d)"
+    python3 -c 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2], sys.argv[3:])' \
+        "$ADDON/mantis.apkm" "$tmp" "${SPLITS[@]}"
+    # cmd_real, not pm: Lepton's cmd wrapper treats every install as the game and moves the game's APKs away
+    session="$(guest cmd_real package install-create -r | sed -n 's/.*\[\([0-9]*\)\].*/\1/p')"
+    for apk in "${SPLITS[@]}"; do
+        podman exec -i "$C" cmd_real package install-write -S "$(stat -c %s "$tmp/$apk")" "$session" "$apk" - \
+            < "$tmp/$apk"
+    done
+    guest cmd_real package install-commit "$session"
+    rm -rf "$tmp"
+}
+
+install_host() {
+    local apk=/data/local/tmp/mantisbuddy.apk
+    podman exec -i "$C" sh -c "cat > $apk.new" < "$ADDON/mantis-buddy-host.apk"
+    if guest cmp -s "$apk.new" "$apk" && installed lepton.mantisbuddy; then
+        guest rm "$apk.new"
+        return 0
+    fi
+    log "installing the Mantis buddy host"
+    guest mv "$apk.new" "$apk"
+    guest cmd_real package install -r "$apk" </dev/null
+}
+
+buddy_keepalive() {
+    if buddy_running; then
+        FAILS=0
+        return 0
+    fi
+    if ! buddy_installed; then
+        activation_staged || return 0
+        log "activating the Mantis buddy (the app staged its PC activation)"
+        # Its own launcher then fails to start the daemon (app_process can't load the arm64 library); expected.
+        guest sh "$STAGED/buddyNew.sh" 2>&1 | sed 's/^/  buddyNew.sh: /'
+    fi
+    ((FAILS < 5)) || return 0
+    log "starting the Mantis buddy"
+    if guest_script start-buddy.sh; then
+        FAILS=0
+    else
+        FAILS=$((FAILS + 1))
+        log "buddy didn't start ($FAILS/5); logcat.txt has LeptonMantisBuddy lines"
+    fi
+}
+
+collect() {
+    local sub
+    for sub in tombstones anr system/dropbox; do
+        [[ -d "$DATA/$sub" ]] || continue
+        mkdir -p "$DIR/$sub"
+        # Android's files belong to the container's user namespace; unreadable ones need podman unshare.
+        find "$DATA/$sub" -maxdepth 1 -type f -newermt "@$STARTED" -exec cp -pu -t "$DIR/$sub" {} + 2>/dev/null ||
+            podman unshare find "$DATA/$sub" -maxdepth 1 -type f -newermt "@$STARTED" \
+                -exec cp -pu -t "$DIR/$sub" {} + 2>/dev/null || true
+    done
+    find "$DIR" -mindepth 1 -type d -empty -delete 2>/dev/null
+}
+
+prune() {
+    local old
+    while IFS= read -r old; do
+        rm -rf -- "$old"
+    done < <(ls -1dt "$LOGS"/*-*/ 2>/dev/null | tail -n +$((KEEP_SESSIONS + 1)))
+}
+
+report() {
+    local out="$HOME/Desktop" name tmp session
+    [[ -d "$out" ]] || out="$HOME"
+    name="lepton-report-$(date +%Y%m%d-%H%M%S)"
+    tmp="$(mktemp -d)"
+    mkdir -p "$tmp/$name/sessions" "$tmp/$name/lepton-logcats"
+    {
+        echo "== date"; date
+        echo "== host"; cat /etc/os-release; uname -a
+        echo "== add-on"; echo "$ADDON"; cat "$ADDON/../../BUNDLE.json"
+        echo "== podman"; podman --version; podman ps -a --format '{{.Names}} {{.Status}}'
+        echo "== resources"; df -h "$HOME"; free -h
+    } >"$tmp/$name/system.txt" 2>&1
+    while IFS= read -r session; do
+        cp -r "$session" "$tmp/$name/sessions/"
+    done < <(ls -1dt "$LOGS"/*-*/ 2>/dev/null | head -n 5)
+    cp -r "$HOME/.steam/steam/logs/lepton-logcats/." "$tmp/$name/lepton-logcats/" 2>/dev/null
+    tar -C "$tmp" -czf "$out/$name.tar.gz" "$name"
+    rm -rf "$tmp"
+    echo "Report saved: $out/$name.tar.gz"
+    if command -v zenity >/dev/null 2>&1 && [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
+        zenity --info --title='Lepton' --no-markup --text="Report saved:\n$out/$name.tar.gz" 2>/dev/null || true
+    fi
+}
+
+main "$@"
