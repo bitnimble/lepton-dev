@@ -45,11 +45,13 @@ Padmap starts with every launch and maps the controller through the game's layou
 - Bind it from the Deck. A tap: press its button. A stick: move the stick. An aim: press its button, then move
   the stick that aims it (the label shows `LB+?` until you do). Padmap's names are Xbox ones: L1 / R1 are `LB` /
   `RB`, L2 / R2 are `LT` / `RT`.
-- Tap a control to select it again and rebind, move or resize it. **−** / **+** resize; **Save** keeps the layout;
-  **View + Menu** or **Close** returns to the game.
+- Tap a control to select it again and rebind, move or resize it. **−** / **+** resize.
+- A selected aim has a checkbox, **Aim with LS while RS is centred** (off by default): the other stick aims the
+  skill while its own stick is untouched, e.g. cast in the direction you're walking.
+- **View + Menu** or **Close** saves any changes and returns to the game.
 
 For example, an aim skill on L1 aimed with the right stick: **+ Aim**, drag it onto the skill, press **L1**, push
-the **right stick**, **Save**.
+the **right stick**, **Close**.
 
 Pokémon UNITE comes with a starting layout: left stick moves, A attacks, R1 / R2 / L2 are Move 1 / Move 2 / the
 Unite Move aimed with the right stick, X uses the battle item, Y recalls. Its positions are approximate, so

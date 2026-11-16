@@ -1,1 +1,1 @@
-padmap debf224 2026-11-16 fix(editor): spell out aim binding as two steps
+padmap a6e6783 2026-11-16 feat(editor): save on close; per-aim fallback to the other stick
