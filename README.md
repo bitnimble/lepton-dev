@@ -83,7 +83,10 @@ It keeps adb connected to every running session; pick the device, then **Broadwa
 HTTPS). Video, touch, keyboard and the nav buttons all go through the one HTTP port ("proxy over adb").
 Phone browsers get real multi-touch: each browser touch point becomes its own Android pointer (two
 simultaneous CDP touches showed as `P: 2/2` with `settings put system pointer_location 1`).
-Encoder Surface input needs `debug.stagefright.c2inputsurface=-1` (`patches/c2-input-surface.patch`).
+`runner/ws-scrcpy-lepton.patch` adds an **Open Mantis** toolbar button (gamepad icon; server route
+`POST /lepton/launch?udid=…&app=mantis` runs `am start -n app.mantispro.gamepad/.MainActivity`; Back returns
+to the game) and keeps fit-to-screen encode bounds landscape, so a portrait phone still gets a landscape-sized
+stream. Encoder Surface input needs `debug.stagefright.c2inputsurface=-1` (`patches/c2-input-surface.patch`).
 
 Steam launches stream `logcat -b all` to `run/<ctx>.logcat.stream` (Lepton's own shutdown capture misses
 early exits).
@@ -117,6 +120,9 @@ Android boots in ~20s with software rendering. Lepton refuses an existing profil
   ("Invalid mkdirs path"). Creating the dir runner-side (`external/Android/data/<pkg>/cache`, mode 2700) works.
 - UNITE bot matches show the VS screen, then return to the challenge screen; no new sockets are opened.
   Unconfirmed: incomplete asset download, or ACE anti-cheat (`libanogs`) refusing the environment.
+- Lepton ends the session when the game's process dies, and Android may kill a backgrounded game on a
+  configuration change (`am_kill … resetConfig`). Open other apps over the game (Mantis button, Back to return)
+  rather than going Home.
 - Steam launches occasionally exit within 30s of boot (cause not yet captured; see the logcat stream).
 - Lepton's install hook treats every `pm install` as the game: installing a second app re-runs the game's
   `/data/steam_app` move (harmless "Cross-device link" errors).

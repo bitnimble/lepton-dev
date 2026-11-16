@@ -1,0 +1,121 @@
+diff --git a/src/app/googDevice/client/StreamClientScrcpy.ts b/src/app/googDevice/client/StreamClientScrcpy.ts
+index ba13d4b..93e7176 100644
+--- a/src/app/googDevice/client/StreamClientScrcpy.ts
++++ b/src/app/googDevice/client/StreamClientScrcpy.ts
+@@ -435,7 +435,8 @@ export class StreamClientScrcpy
+         const body = document.body;
+         const width = (body.clientWidth - this.controlButtons.clientWidth) & ~15;
+         const height = body.clientHeight & ~15;
+-        return new Size(width, height);
++        // Lepton's display is always landscape; a portrait window would otherwise cap its width
++        return width >= height ? new Size(width, height) : new Size(height, width);
+     }
+ 
+     private setTouchListeners(player: BasePlayer): void {
+diff --git a/src/app/googDevice/toolbox/GoogToolBox.ts b/src/app/googDevice/toolbox/GoogToolBox.ts
+index 4043387..7dca4c9 100644
+--- a/src/app/googDevice/toolbox/GoogToolBox.ts
++++ b/src/app/googDevice/toolbox/GoogToolBox.ts
+@@ -89,6 +89,14 @@ export class GoogToolBox extends ToolBox {
+             elements.push(screenshot);
+         }
+ 
++        const mantis = new ToolBoxButton('Open Mantis', SvgImage.Icon.GAMEPAD);
++        mantis.addEventListener('click', () => {
++            const url = new URL('lepton/launch', location.href);
++            url.search = new URLSearchParams({ udid, app: 'mantis' }).toString();
++            fetch(url.toString(), { method: 'POST' }).catch((error) => console.error('Open Mantis', error));
++        });
++        elements.push(mantis);
++
+         const fullscreen = new ToolBoxButton('Fullscreen Mode', SvgImage.Icon.FULL_SCREEN);
+         fullscreen.addEventListener('click', () => {
+             player.getParent()?.requestFullscreen();
+diff --git a/src/app/ui/SvgImage.ts b/src/app/ui/SvgImage.ts
+index 817adc5..b1a4955 100644
+--- a/src/app/ui/SvgImage.ts
++++ b/src/app/ui/SvgImage.ts
+@@ -16,6 +16,7 @@ import ArrowBackSVG from '../../public/images/buttons/arrow_back.svg';
+ import ToggleOnSVG from '../../public/images/buttons/toggle_on.svg';
+ import ToggleOffSVG from '../../public/images/buttons/toggle_off.svg';
+ import FullScreenSVG from '../../public/images/buttons/full_screen.svg';
++import GamepadSVG from '../../public/images/buttons/gamepad.svg';
+ 
+ export enum Icon {
+     BACK,
+@@ -36,6 +37,7 @@ export enum Icon {
+     ARROW_BACK,
+     TOGGLE_ON,
+     TOGGLE_OFF,
++    GAMEPAD,
+ }
+ 
+ export default class SvgImage {
+@@ -78,6 +80,8 @@ export default class SvgImage {
+                 return ToggleOnSVG;
+             case Icon.TOGGLE_OFF:
+                 return ToggleOffSVG;
++            case Icon.GAMEPAD:
++                return GamepadSVG;
+             default:
+                 return '';
+         }
+diff --git a/src/public/images/buttons/gamepad.svg b/src/public/images/buttons/gamepad.svg
+new file mode 100644
+index 0000000..d116d8d
+--- /dev/null
++++ b/src/public/images/buttons/gamepad.svg
+@@ -0,0 +1,8 @@
++<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
++    <path d="M21.58,16.09l-1.09-7.66C20.21,6.46,18.52,5,16.53,5H7.47C5.48,5,3.79,6.46,3.51,8.43l-1.09,7.66
++    C2.2,17.63,3.39,19,4.94,19c0.68,0,1.32-0.27,1.8-0.75L9,16h6l2.25,2.25c0.48,0.48,1.13,0.75,1.8,0.75
++    C20.61,19,21.8,17.63,21.58,16.09z
++    M11,11H9v2H8v-2H6v-1h2V8h1v2h2V11z
++    M15,10c-0.55,0-1-0.45-1-1s0.45-1,1-1s1,0.45,1,1S15.55,10,15,10z
++    M17,13c-0.55,0-1-0.45-1-1s0.45-1,1-1s1,0.45,1,1S17.55,13,17,13z"/>
++</svg>
+diff --git a/src/server/services/HttpServer.ts b/src/server/services/HttpServer.ts
+index f941dfc..852304b 100644
+--- a/src/server/services/HttpServer.ts
++++ b/src/server/services/HttpServer.ts
+@@ -1,6 +1,7 @@
+ import * as http from 'http';
+ import * as https from 'https';
+ import path from 'path';
++import { execFile } from 'child_process';
+ import { Service } from './Service';
+ import { Utils } from '../Utils';
+ import express, { Express } from 'express';
+@@ -13,6 +14,10 @@ const DEFAULT_STATIC_DIR = path.join(__dirname, './public');
+ 
+ const PATHNAME = process.env[EnvName.WS_SCRCPY_PATHNAME] || __PATHNAME__;
+ 
++const LAUNCHABLE_ACTIVITIES: Record<string, string> = {
++    mantis: 'app.mantispro.gamepad/.MainActivity',
++};
++
+ export type ServerAndPort = {
+     server: https.Server | http.Server;
+     port: number;
+@@ -85,6 +90,21 @@ export class HttpServer extends TypedEmitter<HttpServerEvents> implements Servic
+             this.mainApp.get('/mjpeg/:udid', new MjpegProxyFactory().proxyRequest);
+             /// #endif
+         }
++        this.mainApp.post(path.posix.join(PATHNAME, 'lepton/launch'), (req, res) => {
++            const udid = req.query.udid;
++            const activity = LAUNCHABLE_ACTIVITIES[String(req.query.app)];
++            if (typeof udid !== 'string' || !activity) {
++                res.sendStatus(400);
++                return;
++            }
++            execFile('adb', ['-s', udid, 'shell', 'am', 'start', '-n', activity], (error, stdout, stderr) => {
++                if (error) {
++                    res.status(500).send(stderr || error.message);
++                    return;
++                }
++                res.send(stdout);
++            });
++        });
+         const config = Config.getInstance();
+         config.servers.forEach((serverItem) => {
+             const { secure, port, redirectToSecure } = serverItem;

@@ -7,6 +7,7 @@ put() { docker exec -i lepton-runner sh -c "mkdir -p \"\$(dirname '$2')\" && cat
 put "$R/runner/lepton-env.sh" "$W/lepton-env.sh"
 put "$R/runner/pipewire-null-sink.conf" /etc/pipewire/pipewire.conf.d/lepton-null-sink.conf
 put "$R/runner/ws-scrcpy.yaml" "$W/ws-scrcpy.yaml"
+put "$R/runner/ws-scrcpy-lepton.patch" "$W/ws-scrcpy-lepton.patch"
 for script in setup-rootful run-apk-rootful run-steamlaunch-rootful sysbake-rootful ndk-stage gapps-stage watch \
     ws-scrcpy ws-scrcpy-setup; do
     put "$R/runner/$script.sh" "$W/$script.sh" 755
