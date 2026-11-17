@@ -1,1 +1,1 @@
-padmap 1a2c619 2026-11-18 feat(editor): settings cog with Button style and a changeable editor chord
+padmap c0e0ff8 2026-11-18 fix(editor): chord labels join their button glyphs with a plain-text +
