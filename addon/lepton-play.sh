@@ -3,8 +3,8 @@
 # lepton-play-slot) that Steam launches like any game; its Android profile (the shortcut's compatdata) holds a
 # game installed from the Play Store and launched by package name, recorded in <compatdata>/lepton-launch-package.
 #   nothing recorded, LEPTON_PLAY_ONLY=true or a Google sign-in launch (also <compatdata>/lepton-open-play-store,
-#     for one launch of any game): open the Play Store; when it stops, the newest installed app becomes the
-#     slot's game
+#     for one launch of any game): open the Play Store until Steam stops the game; then the newest installed app
+#     becomes the slot's game
 #   LEPTON_LAUNCH_PACKAGE=<pkg>: launch that package and record it
 #   a recorded package the profile doesn't have (uninstalled, profile reset): open its Play Store page
 # Sourced at the end of liblepton.sh, so these wrap the originals; anything that is not a slot is untouched.
@@ -55,9 +55,12 @@ function prepare_apkm()
     if [[ -n "$LEPTON_PLAY_PACKAGE" ]] && ! lepton_play_installed "$LEPTON_PLAY_PACKAGE"; then
         println "Play game: $LEPTON_PLAY_PACKAGE isn't installed in this profile, opening its Play Store page"
         LEPTON_PLAY_MISSING="$LEPTON_PLAY_PACKAGE" LEPTON_PLAY_PACKAGE=""
-        return
+    else
+        println "Play game: ${LEPTON_PLAY_PACKAGE:-none yet, opening the Play Store}"
     fi
-    println "Play game: ${LEPTON_PLAY_PACKAGE:-none yet, opening the Play Store}"
+    # Play restarts itself when it updates itself or Play services (always, after a first sign-in), so only
+    # Steam stopping the game may end a Play Store session.
+    [[ -n "$LEPTON_PLAY_PACKAGE" ]] || export LEPTON_GOOGLE_SIGNIN=true
 }
 
 # By its code dir (/data/app/~~<id>/<package>-<id>): packages.xml keeps entries for apps that are gone. Unknown

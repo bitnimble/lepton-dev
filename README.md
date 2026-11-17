@@ -130,8 +130,9 @@ game; its profile (one compatdata per appid) holds a game installed from the Pla
 name in `<compatdata>/lepton-launch-package`. `addon/lepton-play.sh`, sourced at the end of the patched
 `liblepton.sh`, wraps the app-id, install, launch and teardown functions for slots only:
 
-- nothing recorded, `LEPTON_PLAY_ONLY=true` or a Google sign-in launch: boot to the Play Store; when the session
-  stops (Lepton's teardown, while Android is still up), the newest installed app becomes the slot's game;
+- nothing recorded, `LEPTON_PLAY_ONLY=true` or a Google sign-in launch: boot to the Play Store in Google sign-in
+  mode, so the Play Store restarting (updating itself or Play services) doesn't end the session; when Steam stops
+  it (Lepton's teardown, while Android is still up), the newest installed app becomes the slot's game;
 - `LEPTON_LAUNCH_PACKAGE=<pkg>`: launch and record that package;
 - a recorded package with no code dir in the profile (uninstalled, profile reset): open its Play Store page; the
   record is kept.
