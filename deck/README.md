@@ -43,19 +43,20 @@ are untouched. If a game misbehaves in tiered, launch option `LEPTON_NDK_TRANSLA
 ## Controls
 
 Padmap starts with every launch and maps the controller through the game's layout. Press **View + Menu**
-(Select + Start) or tap the floating ✥ button to open the layout editor over the game:
+(Select + Start) to open the layout editor over the game:
 
 - **+ Tap**, **+ Stick**, **+ Aim** add a control, already selected (yellow). Drag it onto the game's button.
 - Bind it from the Deck. A tap: press its button. A stick: move the stick. An aim: press its button, then move
   the stick that aims it (the label shows `LB+?` until you do). Padmap's names are Xbox ones: L1 / R1 are `LB` /
   `RB`, L2 / R2 are `LT` / `RT`.
-- Tap a control to select it again and rebind, move or resize it. **−** / **+** resize, **Delete** removes it.
+- Tap a control to select it again and rebind, move or resize it. **−** / **+** resize, **Delete** removes it
+  (these appear while a control is selected).
 - A selected aim has a checkbox, **Aim with LS while RS is centred** (off by default): the other stick aims the
   skill while its own stick is untouched, e.g. cast in the direction you're walking.
-- **View + Menu** or **Close** saves any changes and returns to the game.
+- **View + Menu** or **Done** saves any changes and returns to the game.
 
 For example, an aim skill on L1 aimed with the right stick: **+ Aim**, drag it onto the skill, press **L1**, push
-the **right stick**, **Close**.
+the **right stick**, **Done**.
 
 While Padmap maps a game, the game's vibrations rumble the Deck (Steam's controller settings for the game must
 allow rumble). `session.log`'s Padmap lines say `rumble: ... has N motor(s)`; 0 means Steam's virtual controller
