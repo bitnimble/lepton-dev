@@ -465,7 +465,7 @@ impl App {
             let hint = ui.painter().layout_no_wrap(HINT.into(), FontId::proportional(22.0), DIM);
             let title_width = (ui.available_width() - hint.size().x - 24.0).max(0.0);
             ui.allocate_ui(vec2(title_width, 44.0), |ui| {
-                ui.add(egui::Label::new(RichText::new(title).size(34.0).strong()).truncate());
+                ui.add(egui::Label::new(RichText::new(title).size(34.0).strong()).wrap());
             });
             ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
                 ui.label(RichText::new(HINT).color(DIM));
@@ -1242,6 +1242,25 @@ mod tests {
         let quit = harness.get_by_label("Quit");
         assert!(quit.is_focused(), "eight downs reach the last row");
         assert!(quit.rect().bottom() <= 400.0, "the focused row is scrolled on screen: {:?}", quit.rect());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_long_name_wraps_in_full_on_its_page() {
+        let (dir, steam) = crate::steam::tests::fixture();
+        let mut harness =
+            Harness::builder().with_size(vec2(1280.0, 800.0)).build_eframe(|cc| App::with_steam(cc, steam));
+        harness.run_steps(3);
+        let long = "AAAAXY: A Nonlinear 2D Puzzle Platformer Taking Place In Impossible Spaces (Definitive Extended Edition)";
+        let app = harness.state_mut();
+        app.overrides.names.insert(0xB676_0000, long.into());
+        app.refresh();
+        app.push(Screen::Game(0xB676_0000));
+        harness.run_steps(3);
+        let title = harness.get_by_label(long).rect();
+        let hint = harness.get_by_label(HINT).rect();
+        assert!(title.height() > 60.0, "the name wraps onto more lines: {title:?}");
+        assert!(title.right() <= hint.left(), "and stays clear of the button hint: {title:?} {hint:?}");
         std::fs::remove_dir_all(dir).unwrap();
     }
 
