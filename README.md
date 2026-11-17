@@ -15,7 +15,7 @@ touch mapping ([deck/README.md](deck/README.md)).
 | `addon/` | The Lepton + Padmap add-on, shipped as a bundle's `compat_tool/lepton-padmap/`; `addon/padmap/` is Padmap's APK, start script and layouts, vendored by `bin/update-padmap.sh` from [bitnimble/padmap](https://github.com/bitnimble/padmap) (checked out next to this repo) |
 | `deck/` | Deck-side installer/updater and user guide; the Deck runs them from a clone of this repo |
 | `bundle/` (gitignored) | On the Deck: Android bundles copied from `data/deck-dist/<id>/` |
-| `patches/` | Patches to the release's `compat_tool/` (`*.patch`), with the patched `liblepton.sh`, `properties.sh` and `lepton-x86_64-entry` that `bin/push.sh` installs |
+| `patches/` | Patches to the release's `compat_tool/` (`*.patch`), with the patched `liblepton.sh`, `properties.sh`, `lepton-x86_64-entry` and `ndk_auxv.c` (the NDK compatibility shim, rebuilt and installed over each stage) that `bin/push.sh` installs |
 | `diag/` | Hang-triage probes for a running session |
 | `docs/screens/` | Reference screenshots |
 | `data/` (gitignored) | Release bundle, Google r14 system image, APK/APKM files, sysbox sources/builds, screenshots |

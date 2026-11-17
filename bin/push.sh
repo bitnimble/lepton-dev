@@ -28,4 +28,23 @@ for stage in stage ndk gapps; do
     put "$R/patches/lepton-x86_64-entry" "$T/lepton-x86_64-entry" 755
     docker exec lepton-runner sh -c "rm -rf '$T/lepton-padmap' && cp -a '$A' '$T/lepton-padmap'"
 done
+# Rebuild patches/ndk_auxv.c (mode-defer + guest-consistent /proc + guest-mmap low-bias) and
+# install it over each active stage's bundled shim. The shim's bridge build-id check means a
+# newer NDK build disables its private-ABI pokes instead of misbehaving, so this stays safe
+# across bundle updates; re-run after any re-stage, like the liblepton.sh override above.
+put "$R/patches/ndk_auxv.c" "$W/ndk_auxv.c"
+if docker exec lepton-runner sh -c 'command -v clang >/dev/null 2>&1'; then
+    docker exec lepton-runner sh -c "clang --target=x86_64-linux-android34 -O2 -fPIC -shared -nostdlib \
+        -fvisibility=hidden -Wall -Wextra -Werror -Wl,-soname,liblepton_ndk_auxv.so \
+        -o '$W/liblepton_ndk_auxv.so' '$W/ndk_auxv.c'"
+    for stage in stage ndk gapps; do
+        D="$W/$stage/compat_tool/liblepton/ndk_auxv"
+        docker exec lepton-runner test -d "$D/bin" || continue
+        docker exec lepton-runner sh -c "! [ -x '$D/validate.sh' ] || bash '$D/validate.sh' '$W/liblepton_ndk_auxv.so' >/dev/null"
+        docker exec lepton-runner sh -c "install -m644 '$W/liblepton_ndk_auxv.so' '$D/bin/liblepton_ndk_auxv.so' && cp '$W/ndk_auxv.c' '$D/ndk_auxv.c'"
+    done
+    echo "ndk shim rebuilt and installed into stages"
+else
+    echo 'WARN: no clang in runner; NDK shim left as the bundle default (tracked ndk_auxv.c fix not applied)' >&2
+fi
 echo pushed
