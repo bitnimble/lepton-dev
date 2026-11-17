@@ -82,6 +82,9 @@ function setup_props()
         # (screen recording, scrcpy) null-deref in CCodec::createInputSurface
         props_echo "debug.stagefright.c2inputsurface=-1"
     else
+        if [[ "$(uname -m)" == "x86_64" && "$(android_sdk_version)" -ge 34 && "${LEPTON_CODEC2:-auto}" != false ]]; then
+            println "WARNING: $(lepton_dma_heap_device) isn't readable and writable by $(id -un): Android gets no audio or video codecs" >&2
+        fi
         props_echo "debug.stagefright.ccodec=0"
     fi
     props_echo "ro.opengles.version=196609"

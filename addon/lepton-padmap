@@ -230,6 +230,7 @@ report() {
         echo "== host"; cat /etc/os-release; uname -a
         echo "== add-on"; echo "$ADDON"; cat "$ADDON/padmap/VERSION" "$ADDON/../../BUNDLE.json"
         echo "== podman"; podman --version; podman ps -a --format '{{.Names}} {{.Status}}'
+        echo "== devices"; id; ls -l /dev/dma_heap/ /dev/dri/
         echo "== resources"; df -h "$HOME"; free -h
     } >"$tmp/$name/system.txt" 2>&1
     journalctl -k -b -o short-precise --no-pager >"$tmp/$name/kernel.txt" 2>&1
