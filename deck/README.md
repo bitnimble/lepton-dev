@@ -49,10 +49,10 @@ Padmap starts with every launch and maps the controller through the game's layou
 - Bind it from the Deck. A tap: press its button. A stick: move the stick. An aim: press its button, then move
   the stick that aims it (the label shows `LB+?` until you do). Padmap's names are Xbox ones: L1 / R1 are `LB` /
   `RB`, L2 / R2 are `LT` / `RT`.
-- Tap a control to select it again and rebind, move or resize it. **−** / **+** resize, **Delete** removes it
-  (these appear while a control is selected).
-- A selected aim has a checkbox, **Aim with LS while RS is centred** (off by default): the other stick aims the
-  skill while its own stick is untouched, e.g. cast in the direction you're walking.
+- Tap a control to select it again and rebind, move or resize it. **Smaller** / **Larger** resize, **Delete**
+  removes it (these appear while a control is selected).
+- A selected aim has a checkbox, **Aim with LS when RS is idle** (off by default): the other stick aims the skill
+  while its own stick is untouched, e.g. cast in the direction you're walking.
 - **View + Menu** or **Done** saves any changes and returns to the game.
 
 For example, an aim skill on L1 aimed with the right stick: **+ Aim**, drag it onto the skill, press **L1**, push

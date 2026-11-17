@@ -1,1 +1,1 @@
-padmap d517bf7 2026-11-17 feat(ui): restyle the layout editor as one toolbar panel with controller glyphs
+padmap 185f31d 2026-11-17 feat(ui): drop the editor's instruction text; labels say what each control does
