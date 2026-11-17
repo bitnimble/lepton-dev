@@ -1,1 +1,1 @@
-padmap 0d533c1 2026-11-18 fix: read "chord": null as no chord; grant notifications even if the overlay grant fails
+padmap c2f10f3 2026-11-18 feat(editor): set dropdown lists sets only; Duplicate, Set activation chord, Delete set as row buttons
