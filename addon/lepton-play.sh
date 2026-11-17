@@ -6,6 +6,7 @@
 #     for one launch of any game): open the Play Store; when it stops, the newest installed app becomes the
 #     slot's game
 #   LEPTON_LAUNCH_PACKAGE=<pkg>: launch that package and record it
+#   a recorded package the profile doesn't have (uninstalled, profile reset): open its Play Store page
 # Sourced at the end of liblepton.sh, so these wrap the originals; anything that is not a slot is untouched.
 
 PLAY_SLOT_MARKER=lepton-play-slot
@@ -35,11 +36,14 @@ function prepare_apkm()
         return
     fi
     [[ -n "${STEAM_COMPAT_DATA_PATH:-}" ]] || die "Play games need a Steam launch (STEAM_COMPAT_DATA_PATH)."
-    export LEPTON_PLAY_SLOT=1 LEPTON_PLAY_PACKAGE=""
+    export LEPTON_PLAY_SLOT=1 LEPTON_PLAY_PACKAGE="" LEPTON_PLAY_MISSING=""
     # An app path makes is_app true, which the launch rc needs; an empty APKM dir keeps /data/steam_app empty.
     export LEPTON_APKM_DIR="${STEAM_COMPAT_DATA_PATH}/lepton-play-slot"
     export APP_PATH="${LEPTON_APKM_DIR}/base.apk"
     mkdir -p -- "$LEPTON_APKM_DIR"
+    # A slot installs nothing, so a booted profile is complete: a first boot cut off before Lepton marked it
+    # would otherwise fail installation validation on every launch.
+    [[ ! -f "${STEAM_COMPAT_DATA_PATH}/baked/data_overlay/system/packages.xml" ]] || touch -- "$(app_install_complete_path)"
     if [[ -n "${LEPTON_LAUNCH_PACKAGE:-}" ]]; then
         LEPTON_PLAY_PACKAGE="$LEPTON_LAUNCH_PACKAGE"
     elif [[ "${LEPTON_PLAY_ONLY:-false}" != true ]] && ! google_signin_mode; then
@@ -48,7 +52,22 @@ function prepare_apkm()
     [[ -z "$LEPTON_PLAY_PACKAGE" || "$LEPTON_PLAY_PACKAGE" =~ ^[A-Za-z0-9_.]+$ ]] ||
         die "Not an Android package name: $LEPTON_PLAY_PACKAGE"
     [[ -z "${LEPTON_LAUNCH_PACKAGE:-}" ]] || printf '%s\n' "$LEPTON_PLAY_PACKAGE" > "$(lepton_play_record)"
+    if [[ -n "$LEPTON_PLAY_PACKAGE" ]] && ! lepton_play_installed "$LEPTON_PLAY_PACKAGE"; then
+        println "Play game: $LEPTON_PLAY_PACKAGE isn't installed in this profile, opening its Play Store page"
+        LEPTON_PLAY_MISSING="$LEPTON_PLAY_PACKAGE" LEPTON_PLAY_PACKAGE=""
+        return
+    fi
     println "Play game: ${LEPTON_PLAY_PACKAGE:-none yet, opening the Play Store}"
+}
+
+# By its code dir (/data/app/~~<id>/<package>-<id>): packages.xml keeps entries for apps that are gone. Unknown
+# counts as installed, so a profile that can't be read never sends every launch to the Play Store.
+function lepton_play_installed()
+{
+    local apps="${STEAM_COMPAT_DATA_PATH}/baked/data_overlay/app" found
+    [[ -d "$apps" ]] || return 0
+    found="$(as_container_owner find "$apps" -mindepth 2 -maxdepth 2 -type d -name "$1-*" -print -quit)" || return 0
+    [[ -n "$found" ]]
 }
 
 function get_app_id()
@@ -73,6 +92,10 @@ function lepton_observed_app_id()
 function lepton_launch_commands()
 {
     [[ -n "${LEPTON_PLAY_SLOT:-}" ]] || { lepton_orig_lepton_launch_commands "$@"; return; }
+    if [[ -n "${LEPTON_PLAY_MISSING}" ]]; then
+        print "am start -a android.intent.action.VIEW -d market://details?id=${LEPTON_PLAY_MISSING} -p ${PLAY_STORE_PACKAGE}"
+        return
+    fi
     if [[ -z "${LEPTON_PLAY_PACKAGE}" ]]; then
         print "am start -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p ${PLAY_STORE_PACKAGE}"
         return
@@ -106,7 +129,7 @@ function install_app()
 # Teardown stops Android here, while it is still running: after a Play Store session, record the newest app.
 function kill_container()
 {
-    [[ -z "${LEPTON_PLAY_SLOT:-}" || -n "${LEPTON_PLAY_PACKAGE}" ]] || lepton_play_record_newest
+    [[ -z "${LEPTON_PLAY_SLOT:-}" || -n "${LEPTON_PLAY_PACKAGE}${LEPTON_PLAY_MISSING}" ]] || lepton_play_record_newest
     lepton_orig_kill_container "$@"
 }
 

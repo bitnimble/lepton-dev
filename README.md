@@ -126,7 +126,9 @@ name in `<compatdata>/lepton-launch-package`. `addon/lepton-play.sh`, sourced at
 
 - nothing recorded, `LEPTON_PLAY_ONLY=true` or a Google sign-in launch: boot to the Play Store; when the session
   stops (Lepton's teardown, while Android is still up), the newest installed app becomes the slot's game;
-- `LEPTON_LAUNCH_PACKAGE=<pkg>`: launch and record that package.
+- `LEPTON_LAUNCH_PACKAGE=<pkg>`: launch and record that package;
+- a recorded package with no code dir in the profile (uninstalled, profile reset): open its Play Store page; the
+  record is kept.
 
 A `lepton-open-play-store` file in any game's compatdata makes its next launch a Google sign-in launch (the file is
 removed); the Game Manager writes it.
