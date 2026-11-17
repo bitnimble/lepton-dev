@@ -27,7 +27,8 @@ back; Steam + X opens the keyboard). Changes apply to the running Steam: it neve
 - A game's page: **Play**, **Game** (for Play games: which installed app it launches, or pick another in the Play
   Store on next launch), **Name**, **Runtime** (which installed Lepton runs it), **Artwork** (capsule, header,
   hero, logo and icon, from an image file or from SteamGridDB with your API key in **Settings**), **Open the Play
-  Store on next launch** (sign in to Google again), the **Google device ID** (if Google says the device isn't
+  Store on next launch** (sign in to Google again), **Set up Google services** (starts the game's Android just to
+  let Play update itself and Google Play services, a few minutes on a new game, then closes), the **Google device ID** (if Google says the device isn't
   certified, register it at google.com/android/uncertified) and **Remove** (optionally with the game's data).
 - **Runtimes** lists the installed Lepton tools; **Update Lepton + Padmap** pulls this checkout and reinstalls,
   **Save crash report** writes one to the Desktop.

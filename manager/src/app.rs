@@ -675,7 +675,15 @@ impl App {
             });
             self.refresh();
         }
-        if let Some(tool) = game.tool.as_deref().and_then(|id| self.tools.iter().find(|t| t.id == id)).cloned() {
+        let tool = game.tool.as_deref().and_then(|id| self.tools.iter().find(|t| t.id == id)).cloned();
+        if tool.as_ref().is_some_and(|t| t.gapps) && self.row(ui, "Set up Google services", "update Play services, then close") {
+            let compat = compat.clone();
+            self.steam_change("Starting", "Updating Google services: the game closes by itself when done", Undo::Nothing, move || {
+                lepton::request_google_setup(&compat).map_err(|e| e.to_string())?;
+                SteamClient::run(appid)
+            });
+        }
+        if let Some(tool) = tool {
             match self.gsf.get(&appid).cloned() {
                 None => {
                     self.gsf.insert(appid, None);

@@ -5,5 +5,6 @@ __pycache__/
 /manager/target/
 /deck/lepton-manager
 /addon/padmap/padmap.apk
+/addon/lepton-helper.apk
 /patches/liblepton_ndk_auxv.so
 /lepton-report-*.tar.gz

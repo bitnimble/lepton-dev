@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="app.lepton.helper"
+    android:versionCode="1"
+    android:versionName="0.1">
+
+    <uses-sdk android:minSdkVersion="30" android:targetSdkVersion="34" />
+
+    <application android:label="Lepton" android:allowBackup="false">
+        <activity
+            android:name=".WaitActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen" />
+    </application>
+</manifest>

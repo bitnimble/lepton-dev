@@ -5,6 +5,10 @@ lepton_padmap_entry() {
     mkdir -p "$dir" || return 0
     ln -sfn "$dir" "$logs/latest"
     export LEPTON_SESSION_DIR="$dir"
+    if [[ -n "${STEAM_COMPAT_DATA_PATH:-}" && -f "$STEAM_COMPAT_DATA_PATH/lepton-setup-google" ]]; then
+        rm -f -- "$STEAM_COMPAT_DATA_PATH/lepton-setup-google"
+        export LEPTON_SETUP_GOOGLE=true LEPTON_GOOGLE_SIGNIN=true
+    fi
     env -u LD_PRELOAD setsid "$addon/lepton-padmap" session </dev/null >/dev/null 2>&1 &
     exec > >(tee -a "$dir/lepton.log") 2>&1
     printf 'lepton-padmap: session %s, args: %s, NDK mode: %s\n' "$dir" "$*" "${LEPTON_NDK_TRANSLATION_MODE:-auto}"

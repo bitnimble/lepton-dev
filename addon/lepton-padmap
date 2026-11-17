@@ -61,6 +61,15 @@ session() {
     log "Android booted"
     BOOTED=1
     guest logcat -b all -v threadtime 2>&1 | split -b "$LOGCAT_PART" -d -a 3 - "$DIR/logcat-" &
+    if [[ "${LEPTON_SETUP_GOOGLE:-}" == true ]]; then
+        source "$ADDON/setup-google.sh"
+        setup_google
+        PADMAP=0
+        wait_for 60 eval '! running'
+        finish
+        log "session ended"
+        return
+    fi
     local tick=0
     if [[ "$PADMAP" == 0 ]]; then
         log "Padmap disabled (LEPTON_PADMAP=0)"

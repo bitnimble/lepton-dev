@@ -7,6 +7,7 @@ use std::process::Command;
 const SLOT_MARKER: &[u8] = b"lepton-play-slot";
 const LAUNCH_RECORD: &str = "lepton-launch-package";
 const OPEN_PLAY_STORE: &str = "lepton-open-play-store";
+const SETUP_GOOGLE: &str = "lepton-setup-google";
 
 pub fn is_game(shortcut: &Shortcut) -> bool {
     shortcut
@@ -68,6 +69,12 @@ pub fn request_play_store(compat: &Path, on: bool) -> io::Result<()> {
     }
     fs::create_dir_all(compat)?;
     fs::write(flag, b"")
+}
+
+/// The next launch only lets Play update itself and Google Play services, then closes by itself.
+pub fn request_google_setup(compat: &Path) -> io::Result<()> {
+    fs::create_dir_all(compat)?;
+    fs::write(compat.join(SETUP_GOOGLE), b"")
 }
 
 /// Apps installed in the profile (from its /data/app), Padmap excluded.
@@ -133,6 +140,8 @@ mod tests {
         request_play_store(&dir, false).unwrap();
         request_play_store(&dir, false).unwrap();
         assert!(!play_store_requested(&dir));
+        request_google_setup(&dir).unwrap();
+        assert!(dir.join("lepton-setup-google").is_file(), "the flag entry-hook.sh looks for");
         fs::remove_dir_all(dir).unwrap();
     }
 

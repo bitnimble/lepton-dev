@@ -132,7 +132,8 @@ function install_app()
 # Teardown stops Android here, while it is still running: after a Play Store session, record the newest app.
 function kill_container()
 {
-    [[ -z "${LEPTON_PLAY_SLOT:-}" || -n "${LEPTON_PLAY_PACKAGE}${LEPTON_PLAY_MISSING}" ]] || lepton_play_record_newest
+    [[ -z "${LEPTON_PLAY_SLOT:-}" || -n "${LEPTON_PLAY_PACKAGE}${LEPTON_PLAY_MISSING}" || "${LEPTON_SETUP_GOOGLE:-}" == true ]] ||
+        lepton_play_record_newest
     lepton_orig_kill_container "$@"
 }
 
