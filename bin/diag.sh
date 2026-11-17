@@ -1,8 +1,10 @@
 #!/bin/bash
 # Host-side: dump full logcat of a context into the runner and show crash/app-relevant lines.
 # Usage: diag.sh <ctx> <package> [extra-grep-regex]
+set -euo pipefail
+source "$(dirname "$0")/lib.sh"
 CTX="$1"; PKG="$2"; EXTRA="${3:-^$}"
-docker exec lepton-runner bash -c "
+runner_exec bash -c "
 C=lepton-$CTX
 D=/var/lib/containers/lepton/run/$CTX.logcat.txt
 podman exec \$C /system/bin/logcat -d -b all >| \$D 2>&1

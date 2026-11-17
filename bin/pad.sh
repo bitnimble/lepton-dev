@@ -5,15 +5,15 @@
 #        pad.sh stick <l|r> <x> <y>        (-32768..32767)
 #        pad.sh trigger <l|r> <0..255>
 set -euo pipefail
-W=/var/lib/containers/lepton
-send() { docker exec lepton-runner sh -c "printf '%s\n' '$*' >> $W/run/vpad.fifo"; }
+source "$(dirname "$0")/lib.sh"
+send() { runner_exec sh -c "printf '%s\n' '$*' >> $W/run/vpad.fifo"; }
 
 case "$1" in
 start)
-    docker exec lepton-runner systemctl is-active -q lepton-vpad ||
-        docker exec lepton-runner systemd-run -q --collect --unit lepton-vpad /bin/bash "$W/vpad.sh"
+    runner_exec systemctl is-active -q lepton-vpad ||
+        runner_exec systemd-run -q --collect --unit lepton-vpad /bin/bash "$W/vpad.sh"
     ;;
-stop) docker exec lepton-runner systemctl stop lepton-vpad ;;
+stop) runner_exec systemctl stop lepton-vpad ;;
 press)
     case "$2" in
     up) hat="abs 0x11 -1" ;; down) hat="abs 0x11 1" ;; left) hat="abs 0x10 -1" ;; right) hat="abs 0x10 1" ;;

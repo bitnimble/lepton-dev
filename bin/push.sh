@@ -3,8 +3,7 @@
 # (docker cp is unreliable under sysbox).
 set -euo pipefail
 R="$(cd "$(dirname "$0")/.." && pwd)"
-W=/var/lib/containers/lepton
-put() { docker exec -i lepton-runner sh -c "mkdir -p \"\$(dirname '$2')\" && cat >| '$2' && chmod ${3:-644} '$2'" < "$1"; }
+source "$R/bin/lib.sh"
 put "$R/runner/lepton-env.sh" "$W/lepton-env.sh"
 put "$R/runner/pipewire-null-sink.conf" /etc/pipewire/pipewire.conf.d/lepton-null-sink.conf
 put "$R/runner/ws-scrcpy.yaml" "$W/ws-scrcpy.yaml"

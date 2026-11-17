@@ -1,7 +1,9 @@
 #!/bin/bash
 # Host-side: one-shot status of a Lepton context in lepton-runner.
+set -euo pipefail
+source "$(dirname "$0")/lib.sh"
 CTX="$1"
-docker exec lepton-runner bash -c "
+runner_exec bash -c "
 cd /var/lib/containers/lepton/run
 echo '--- driver'; tail -4 '$CTX.driver.log' 2>/dev/null
 echo '--- launcher'; grep -v 'appmanifest_\|Installation marker' '$CTX.log' 2>/dev/null | tail -6
