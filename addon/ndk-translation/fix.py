@@ -30,6 +30,7 @@ PATCHES = (
 def fixed(original):
     data = bytearray(original)
     for _, offset, size, code in PATCHES:
+        assert len(code) <= size, f"patch at {offset:#x} is {len(code)} bytes, over the {size:#x} slot"
         data[offset:offset + size] = code.ljust(size, b"\xcc")
     return bytes(data)
 

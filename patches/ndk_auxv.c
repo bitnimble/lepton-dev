@@ -97,18 +97,23 @@ static const unsigned char bridge_id[16] = {
     0xfd,0x1d,0x67,0xb2,0xc7,0xe0,0x1b,0x75
 };
 
+/* Module base of the caller if it is the NDK bridge, else 0. */
+static unsigned char *lepton_caller_in_bridge(const void *caller) {
+    lepton_dl_info info = {0};
+    if (!dladdr(caller, &info) || !info.name || !info.base) return 0;
+    const char *name = info.name;
+    for (const char *p = name; *p; p++) if (*p == '/') name = p + 1;
+    return strcmp(name, "libndk_translation.so") ? 0 : info.base;
+}
+
 /* Module addresses/state offsets below belong ONLY to this reviewed build.
  * Validate its ELF note before reading any private translator state.
  */
 static unsigned char *bridge_for_caller(const void *caller) {
     unsigned char *base = __atomic_load_n(&bridge_base, __ATOMIC_ACQUIRE);
     if (base) return base;
-    lepton_dl_info info = {0};
-    if (!dladdr(caller, &info) || !info.name || !info.base) return 0;
-    const char *name = info.name;
-    for (const char *p = name; *p; p++) if (*p == '/') name = p + 1;
-    if (strcmp(name, "libndk_translation.so")) return 0;
-    base = info.base;
+    base = lepton_caller_in_bridge(caller);
+    if (!base) return 0;
     if (memcmp(base, "\177ELF\2\1", 6) ||
         memcmp(base + 0x298, bridge_id, sizeof bridge_id)) {
         LOG("Unsupported NDK bridge build; refusing private ABI access");
@@ -189,6 +194,32 @@ static int lepton_app_hex(char *buf, int p, unsigned long v) {
     return p;
 }
 
+static int lepton_memfd(const char *name, const char *buf, long len) {
+    int mfd = (int)syscall(319 /* memfd_create */, name, 0);
+    if (mfd < 0) return -1;
+    long wi = 0, w;
+    while (wi < len && (w = syscall(1, mfd, buf + wi, len - wi)) > 0) wi += w;
+    syscall(8 /* lseek */, mfd, 0, 0);
+    return mfd;
+}
+
+/* True if addr falls in a readable mapping. Guards a deref at a fixed offset
+ * from a module base against landing in an inter-segment PROT_NONE gap. */
+static int lepton_addr_readable(const char *maps, unsigned long addr) {
+    for (const char *p = maps; *p;) {
+        const char *line = p;
+        while (*p && *p != '\n') p++;
+        unsigned long s = 0, e = 0; const char *c = line;
+        while (c < p && *c != '-') { s = s * 16 + lepton_hex(*c); c++; }
+        if (c < p) c++;
+        while (c < p && *c != ' ') { e = e * 16 + lepton_hex(*c); c++; }
+        if (c < p) c++;
+        if (addr >= s && addr < e) return c < p && *c == 'r';
+        if (*p == '\n') p++;
+    }
+    return 0;
+}
+
 /* Guest-consistent value for the /proc syscall PC field. On real arm64 the
  * kernel reports an address inside guest libc (its read-syscall return site);
  * that is what guest code expects to see, and it also happens to satisfy the
@@ -204,8 +235,8 @@ static unsigned long lepton_guest_syscall_p(void) {
     if (mlen > 0) {
         maps[mlen] = 0;
         unsigned long hi, lo = lepton_module_base(maps, "/system/lib64/arm64/libc.so", &hi);
-        if (lo && hi > lo + 0xe8a5) {
-            unsigned long cand = lo + 0xe8a5;
+        unsigned long cand = lo + 0xe8a5;
+        if (lo && hi > cand && lepton_addr_readable(maps, cand - 8) && lepton_addr_readable(maps, cand)) {
             unsigned w0 = *(volatile unsigned *)(cand - 8), w1 = *(volatile unsigned *)(cand - 4), w2 = *(volatile unsigned *)cand;
             if ((unsigned)(w0 + w1 + w2) == 0xFC000003u) cached = cand;
         }
@@ -228,12 +259,7 @@ static int lepton_syscall_fd(void) {
     if (!p) t[ti++] = '0'; else while (p) { unsigned d = p & 0xf; t[ti++] = d < 10 ? '0' + d : 'a' + d - 10; p >>= 4; }
     while (ti) out[oi++] = t[--ti];
     out[oi++] = '\n';
-    int mfd = (int)syscall(319 /* memfd_create */, "s", 0);
-    if (mfd < 0) return -1;
-    long wi = 0, w;
-    while (wi < oi && (w = syscall(1, mfd, out + wi, oi - wi)) > 0) wi += w;
-    syscall(8 /* lseek */, mfd, 0, 0);
-    return mfd;
+    return lepton_memfd("s", out, oi);
 }
 
 /* Guest code parsing /proc/self/maps in the shared address space would otherwise
@@ -241,14 +267,9 @@ static int lepton_syscall_fd(void) {
  * Serve a memfd reduced to a pure-arm64 view (anon/stack/heap, arm64 libs, app
  * data, dev, ART artifacts). */
 static int lepton_filtered_maps_fd(void) {
-    long rf = syscall(257, -100, "/proc/self/maps", 0, 0);
-    if (rf < 0) return -1;
     static char in[384 * 1024];
-    long total = 0, n;
-    while (total < (long)sizeof(in) - 1 &&
-           (n = syscall(0, rf, in + total, sizeof(in) - 1 - total)) > 0)
-        total += n;
-    syscall(3, rf);
+    long total = lepton_read_file("/proc/self/maps", in, sizeof(in) - 1);
+    if (total < 0) return -1;
     static char out[384 * 1024];
     long oi = 0, ls = 0;
     for (long i = 0; i <= total; i++) {
@@ -272,12 +293,7 @@ static int lepton_filtered_maps_fd(void) {
         }
         ls = i + 1;
     }
-    int mfd = (int)syscall(319 /* memfd_create */, "m", 0);
-    if (mfd < 0) return -1;
-    long wi = 0, w;
-    while (wi < oi && (w = syscall(1, mfd, out + wi, oi - wi)) > 0) wi += w;
-    syscall(8 /* lseek */, mfd, 0, 0);
-    return mfd;
+    return lepton_memfd("m", out, oi);
 }
 
 /* Only the NDK bridge may read the guest-consistent /proc views; native x86
@@ -296,9 +312,7 @@ static int blocked_auxv(const char *path, const void *caller) {
     /* Do not use a cached module here: native callers must retain access. */
     lepton_dl_info info = {0};
     if (!dladdr(caller, &info) || !info.name) return 0;
-    const char *name = info.name;
-    for (const char *p = name; *p; p++) if (*p == '/') name = p + 1;
-    if (strcmp(name, "libndk_translation.so")) return 0;
+    if (!lepton_caller_in_bridge(caller)) return 0;
     bridge_for_caller(caller);
     LOG("Denied host auxv to ARM64 guest; using Android fallback");
     *__errno() = 13; /* EACCES, supported by Go's Android sysargs fallback. */
@@ -334,14 +348,6 @@ EXPORT int open(const char *path, int flags, ...) {
         mode = __builtin_va_arg(ap, unsigned);
     __builtin_va_end(ap);
     return syscall(257, -100, path, flags, mode); /* AT_FDCWD */
-}
-
-static int lepton_caller_in_bridge(const void *caller) {
-    lepton_dl_info info = {0};
-    if (!dladdr(caller, &info) || !info.name) return 0;
-    const char *name = info.name;
-    for (const char *p = name; *p; p++) if (*p == '/') name = p + 1;
-    return !strcmp(name, "libndk_translation.so");
 }
 
 /* berberis's guest-mmap emulation (sys_mman_emulation.cc GuestMmap) forwards the
