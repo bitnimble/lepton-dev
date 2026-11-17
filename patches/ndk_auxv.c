@@ -358,6 +358,10 @@ EXPORT int open(const char *path, int flags, ...) {
  * inside the translator, so biasing guest anonymous data mappings into a low
  * window here fixes the whole class with no per-engine offset. JIT code
  * (PROT_EXEC) and ART (caller not in the bridge) are left alone. */
+#define LEPTON_GUEST_VA_FLOOR 0x100000000UL
+#define LEPTON_GUEST_VA_CEILING 0x20000000000UL
+static unsigned long lepton_guest_va_cursor = LEPTON_GUEST_VA_FLOOR;
+
 static void *lepton_guest_mmap(void *addr, __SIZE_TYPE__ length, int prot, int flags,
                                int fd, long long offset, const void *caller) {
     /* Non-exec guest anon mappings only. Unity reserves its heap arena PROT_NONE and
@@ -365,13 +369,21 @@ static void *lepton_guest_mmap(void *addr, __SIZE_TYPE__ length, int prot, int f
      * il2cpp; the bias must include PROT_NONE. */
     if (!addr && (flags & 0x20) && !(prot & 4) && length >= 0x100000 &&
         length < 0x1000000000UL && lepton_caller_in_bridge(caller)) {
-        for (unsigned long a = 0x100000000UL; a < 0x1e0000000000UL; a += 0x1000000000UL) {
+        unsigned long size = (length + 0xfff) & ~0xfffUL;
+        for (unsigned long swept = 0; swept < LEPTON_GUEST_VA_CEILING; swept += size) {
+            unsigned long a = __atomic_fetch_add(&lepton_guest_va_cursor, size, __ATOMIC_RELAXED);
+            if (a + size > LEPTON_GUEST_VA_CEILING) {
+                /* a racing reset can hand out an overlapping range; NOREPLACE rejects it */
+                __atomic_store_n(&lepton_guest_va_cursor, LEPTON_GUEST_VA_FLOOR, __ATOMIC_RELAXED);
+                continue;
+            }
             long r = syscall(9, (void *)a, length, prot, flags | 0x100000 /* MAP_FIXED_NOREPLACE */, fd, offset);
             if (r != -1) {
                 static int logged;
                 if (!__atomic_exchange_n(&logged, 1, __ATOMIC_RELAXED)) LOG("guest anonymous mmap biased below 2TB");
                 return (void *)r;
             }
+            if (*__errno() != 17 /* EEXIST */) break;
         }
     }
     return (void *)syscall(9, addr, length, prot, flags, fd, offset);
