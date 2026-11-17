@@ -1,1 +1,1 @@
-padmap c2f10f3 2026-11-18 feat(editor): set dropdown lists sets only; Duplicate, Set activation chord, Delete set as row buttons
+padmap ea8ee3c 2026-11-18 fix(editor): set dropdown items are plain, like the style menu, not checkboxes
