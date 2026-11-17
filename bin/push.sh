@@ -21,7 +21,7 @@ tar -C "$R/addon" -cf - . | docker exec -i lepton-runner sh -c "rm -rf '$A' && m
 for stage in stage ndk gapps; do
     T="$W/$stage/compat_tool"
     docker exec lepton-runner test -d "$T/liblepton" || continue
-    for lib in liblepton properties; do
+    for lib in liblepton properties lepton-play; do
         put "$R/patches/$lib.sh" "$T/liblepton/$lib.sh"
     done
     put "$R/patches/lepton-x86_64-entry" "$T/lepton-x86_64-entry" 755
