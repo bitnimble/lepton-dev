@@ -1,20 +1,16 @@
 #!/bin/bash
 # Host-side: (re)start a Steam-style launch of an .apk/.apkm in lepton-runner, keeping its profile. Detached.
-# Usage: steamlaunch.sh <appid> <file inside runner> [wait-seconds]
+# Usage: steamlaunch.sh <appid> [file inside runner] [wait-seconds]   (no file: the appid is a Play slot)
 # Env: LEPTON_STAGE (default stage), LEPTON_NDK_TRANSLATION_MODE (overrides the game's recorded mode:
 #      tiered, light-translate-or-interpret, heavy-optimize, interpret-only), LEPTON_ENV_NDK_TRANSLATION_FLAGS
 #      (translator flags, default accurate-sigsegv, "none" for none), LEPTON_PADMAP=0 (skip Padmap),
 #      LEPTON_GOOGLE_SIGNIN=true (install the game but open the Play Store for sign-in, keep session alive),
-#      LEPTON_PLAY_ONLY=true (boot to the Play Store, install nothing; omit the game file),
-#      LEPTON_LAUNCH_PACKAGE=<pkg> (launch an already-installed package, no game file)
-# With no game file and no explicit target, the profile's saved launch package is used.
+#      LEPTON_PLAY_ONLY=true (Play slot: open the Play Store), LEPTON_LAUNCH_PACKAGE=<pkg> (Play slot: launch
+#      and record that package)
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 APPID="$1"; GAME="${2:-}"; WAIT="${3:-60}"
 CTX="steamlaunch-$APPID"
-if [[ -z "$GAME" && -z "${LEPTON_LAUNCH_PACKAGE:-}" && "${LEPTON_PLAY_ONLY:-}" != true ]]; then
-    LEPTON_LAUNCH_PACKAGE="$(runner_exec cat "$W/steam/compatdata/$APPID/lepton-launch-package" 2>/dev/null | tr -d '[:space:]' || true)"
-fi
 launch_prepare
 bash "$(dirname "$0")/pad.sh" start
 launch_clear "$CTX"

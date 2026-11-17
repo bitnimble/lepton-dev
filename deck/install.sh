@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Steam Deck, Desktop Mode: installs or updates Lepton + Padmap from this checkout. The newest bundle in bundle/
-# (lepton-x86_64-<id>.tar.gz, .tar.gz.sha256, .install.sh) is installed with Lepton's own installer if it isn't
-# already, then the checkout's add-on and Steam entry replace the installed tool's and the desktop shortcuts are
-# (re)made. Extra arguments go to Lepton's installer.
+# Steam Deck, Desktop Mode: installs or updates Lepton + Padmap from this checkout. The Android bundle is the newest
+# one in bundle/ (lepton-x86_64-<id>.tar.gz, .tar.gz.sha256, .install.sh), else built by deck/build-bundle.sh, and
+# is installed with Lepton's own installer if it isn't already; then the checkout's add-on and patched release files
+# replace the installed tool's and the desktop shortcuts are (re)made. Extra arguments go to Lepton's installer.
 set -euo pipefail
 shopt -s nullglob
 REPO="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
@@ -33,32 +33,37 @@ if command -v podman >/dev/null 2>&1 && [[ -n "$(podman ps -q --filter label=lep
     exit 1
 fi
 
+source "$REPO/deck/bundle.env"
+installed="$(installed_id)"
 mapfile -t bundles < <(ls -t "$REPO"/bundle/lepton-x86_64-*.tar.gz 2>/dev/null)
+# A bundle copied into bundle/ wins; otherwise build when nothing, or an older auto-built bundle, is installed.
+if ((${#bundles[@]} == 0)) && [[ -z "$installed" || ( "$installed" == auto-* && "$installed" != "$BUNDLE_ID" ) ]]; then
+    echo "Building the Android bundle from Lepton's and Google's downloads (about 2 GB, 15+ minutes)..."
+    bash "$REPO/deck/build-bundle.sh"
+    mapfile -t bundles < <(ls -t "$REPO"/bundle/lepton-x86_64-*.tar.gz)
+fi
 if ((${#bundles[@]})); then
     newest="${bundles[0]}"
     id="${newest##*/lepton-x86_64-}"
     id="${id%.tar.gz}"
-    if [[ "$id" == "$(installed_id)" ]]; then
+    if [[ "$id" == "$installed" ]]; then
         echo "[PASS] Bundle $id is installed"
     else
         [[ ! -d "$TOOL" ]] || args+=(--replace)
         bash "${newest%.tar.gz}.install.sh" "${args[@]}"
-        for old in "${bundles[@]:1}"; do
-            rm -f -- "$old" "$old.sha256" "${old%.tar.gz}.install.sh"
-        done
     fi
+    for old in "${bundles[@]}"; do
+        rm -f -- "$old" "$old.sha256" "${old%.tar.gz}.install.sh"
+    done
 fi
-[[ -d "$TOOL/compat_tool" ]] || {
-    echo "Lepton + Padmap isn't installed yet: copy a bundle into $REPO/bundle/ first (see deck/README.md)." >&2
-    exit 1
-}
+[[ -d "$TOOL/compat_tool" ]] || { echo "Lepton + Padmap isn't installed; see the messages above." >&2; exit 1; }
 
 rm -rf "$ADDON.new"
 cp -r "$REPO/addon" "$ADDON.new"
 rm -rf "$ADDON"
 mv "$ADDON.new" "$ADDON"
-install -m 755 "$REPO/patches/lepton-x86_64-entry" "$TOOL/compat_tool/lepton-x86_64-entry"
-echo "[PASS] Add-on updated from $REPO ($(git -C "$REPO" log -1 --format='%h %cs' 2>/dev/null || echo 'not a git checkout'))"
+bash "$REPO/patches/apply.sh" "$TOOL/compat_tool"
+echo "[PASS] Add-on and patches updated from $REPO ($(git -C "$REPO" log -1 --format='%h %cs' 2>/dev/null || echo 'not a git checkout'))"
 
 mkdir -p "$HOME/.local/bin" "$APPS" "$HOME/lepton-logs" "$LAYOUTS"
 ln -sfn "$ADDON/lepton-padmap" "$HOME/.local/bin/lepton-padmap"
@@ -70,6 +75,9 @@ shortcut() {
 }
 shortcut lepton-padmap-update.desktop "Lepton: Update Lepton + Padmap" "git pull this checkout, then install it" \
     "konsole -e bash \"$REPO/deck/update.sh\" --pause" system-software-update
+shortcut lepton-padmap-play.desktop "Lepton: Add Google Play game" \
+    "Sign in to Google Play, install a game and add it to Steam" \
+    "$TOOL/compat_tool/tools/lepton-google-game-gui --play" system-software-install
 shortcut lepton-padmap-report.desktop "Lepton: Save crash report" \
     "Bundle recent Lepton + Padmap logs into a .tar.gz on the Desktop" "$HOME/.local/bin/lepton-padmap report" \
     document-save
@@ -78,4 +86,4 @@ shortcut lepton-padmap-logs.desktop "Lepton: Open logs" \
     folder-documents
 shortcut lepton-padmap-layouts.desktop "Lepton: Open Padmap layouts" \
     "Gamepad layouts, one JSON file per game" "xdg-open $LAYOUTS" input-gaming
-echo "[PASS] Desktop shortcuts: Update, Save crash report, Open logs, Open Padmap layouts"
+echo "[PASS] Desktop shortcuts: Update, Add Google Play game, Save crash report, Open logs, Open Padmap layouts"

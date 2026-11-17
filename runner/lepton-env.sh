@@ -49,6 +49,17 @@ wait_boot() {
     echo "boot timeout"; tail -40 "$log"; return 1
 }
 
+stop_ctx() {
+    local pidfile="$W/run/$1.pid" pid n
+    pid="$(cat "$pidfile" 2>/dev/null)" || true
+    # SIGTERM first: Lepton's teardown runs with Android still up (Play slots record their game there)
+    if [[ -n "$pid" ]] && kill -TERM "$pid" 2>/dev/null; then
+        for ((n = 0; n < 60; n++)); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+    fi
+    podman rm -f "lepton-$1" >/dev/null 2>&1 || true
+    rm -f "$pidfile"
+}
+
 # Screenshot context $1 to host path $2.
 screencap_ctx() {
     podman exec "lepton-$1" /system/bin/screencap -p /data/local/tmp/screen.png

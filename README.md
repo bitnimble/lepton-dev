@@ -13,9 +13,9 @@ touch mapping ([deck/README.md](deck/README.md)).
 | `bin/` | Host-side helpers (run from this dev container via the docker socket) |
 | `host/` | Scripts run as **root on the docker host** (via privileged `nsenter`); see Host changes |
 | `addon/` | The Lepton + Padmap add-on, shipped as a bundle's `compat_tool/lepton-padmap/`; `addon/padmap/` is Padmap's APK, start script and layouts, vendored by `bin/update-padmap.sh` from [bitnimble/padmap](https://github.com/bitnimble/padmap) (checked out next to this repo) |
-| `deck/` | Deck-side installer/updater and user guide; the Deck runs them from a clone of this repo |
-| `bundle/` (gitignored) | On the Deck: Android bundles copied from `data/deck-dist/<id>/` |
-| `patches/` | Patches to the release's `compat_tool/` (`*.patch`), with the patched `liblepton.sh`, `properties.sh`, `lepton-x86_64-entry`, `lepton-play.sh` (Play-install launch modes) and `ndk_auxv.c` (the NDK compatibility shim, rebuilt and installed over each stage) that `bin/push.sh` installs |
+| `deck/` | Deck-side installer/updater, bundle builder and user guide; the Deck runs them from a clone of this repo |
+| `bundle/` (gitignored) | On the Deck: Android bundles built by `deck/build-bundle.sh` or copied from `data/deck-dist/<id>/` |
+| `patches/` | Patched release files that `patches/apply.sh` installs into a `compat_tool/` (runner stages via `bin/push.sh`, the runner's Deck bundle, the Deck via `deck/install.sh`): `liblepton.sh`, `properties.sh`, `lepton-x86_64-entry`, `lepton-google-game-gui` and the NDK compatibility shim (`ndk_auxv.c`, built to `liblepton_ndk_auxv.so` by `bin/build-ndk-shim.sh`); the `*.patch` files document the `liblepton.sh` and entry changes |
 | `diag/` | Hang-triage probes for a running session |
 | `docs/screens/` | Reference screenshots |
 | `data/` (gitignored) | Release bundle, Google r14 system image, APK/APKM files, sysbox sources/builds, screenshots |
@@ -78,7 +78,8 @@ sysbake helper is rootless-only, so sysbake uses Lepton's own `lepton sysbake` (
 ```bash
 bin/start-runner.sh                      # (re)create runner; volumes keep stages and profiles
 bin/push-inputs.sh                       # stream data/ inputs into the runner
-bin/push.sh                              # runner scripts + patched liblepton into every stage
+bin/push.sh                              # runner scripts, add-on and patches/ into every stage
+bin/build-ndk-shim.sh                    # rebuild patches/liblepton_ndk_auxv.so from patches/ndk_auxv.c
 bin/launch.sh /var/lib/containers/lepton/run/app.apk 30          # fresh `lepton start app.apk`, detached
 bin/status.sh <ctx>; bin/lepton-lines.sh <ctx>; bin/diag.sh <ctx> <package>
 bin/shot.sh <ctx> <name>; bin/tap.sh <ctx> <name> x y [x y…]      # 150ms presses: Unity drops short taps
@@ -102,7 +103,7 @@ simultaneous CDP touches showed as `P: 2/2` with `settings put system pointer_lo
 `POST /lepton/launch?udid=…&app=padmap` opens Padmap's layout editor over the game), keeps fit-to-screen encode bounds landscape, so a portrait phone still gets a landscape-sized
 stream, and makes the keyboard toggle work on phones: it focuses an off-screen field (opening the on-screen
 keyboard) whose edits are diffed and forwarded as text injection + `DEL`/`ENTER` keys; physical keys still go
-through scrcpy key events. Text injection is limited to characters Android's key map can type (ASCII). Encoder Surface input needs `debug.stagefright.c2inputsurface=-1` (`patches/c2-input-surface.patch`).
+through scrcpy key events. Text injection is limited to characters Android's key map can type (ASCII). Encoder Surface input needs `debug.stagefright.c2inputsurface=-1` (`patches/properties.sh`).
 
 `.apkm` bundles need a Steam-style launch (`bin/steamlaunch.sh <appid> <file.apkm> [wait]`, which runs
 `runner/run-steamlaunch-rootful.sh`; context `steamlaunch-<appid>`, verb `waitforexitandrun -- <path>`). It goes
@@ -116,24 +117,18 @@ Android boots in ~20s with software rendering. Lepton refuses an existing profil
 
 ### Play-installed games (no apk file)
 
-Games that must come from the Play Store install into their own isolated profile (one compatdata per appid),
-then launch by package name with no host apk. Opt-in via env, so the apk-driven path above is untouched
-(`patches/lepton-play.sh`, sourced last from the liblepton fork):
+A Play slot is a placeholder `.apkm` (a text file starting with `lepton-play-slot`) that Steam launches like any
+game; its profile (one compatdata per appid) holds a game installed from the Play Store, launched by the package
+name in `<compatdata>/lepton-launch-package`. `addon/lepton-play.sh`, sourced at the end of the patched
+`liblepton.sh`, wraps the app-id, install, launch and teardown functions for slots only:
 
-- `LEPTON_PLAY_ONLY=true` boots to the Play Store and installs nothing.
-- `LEPTON_LAUNCH_PACKAGE=<pkg>` launches an already-installed package, resolving its launcher activity at boot.
-- With no game file and neither set, `steamlaunch.sh` reads the profile's `lepton-launch-package` file for the target.
+- nothing recorded, `LEPTON_PLAY_ONLY=true` or a Google sign-in launch: boot to the Play Store; when the session
+  stops (Lepton's teardown, while Android is still up), the newest installed app becomes the slot's game;
+- `LEPTON_LAUNCH_PACKAGE=<pkg>`: launch and record that package.
 
-Dev-harness flow (the `bin/` scripts drive `lepton-runner`):
-
-```
-bin/install-game.sh <appid>                 # fresh profile boots to the Play Store; sign in and install
-bin/set-launch-target.sh <appid> --newest   # target the just-installed game (or --list, or a package name)
-bin/steamlaunch.sh <appid>                   # launch it by package
-```
-
-On a Deck the same mechanics ship in the bundle (the compat tool reads `lepton-launch-package` from the Steam
-compatdata); wiring the install and retarget as gaming-mode Steam shortcuts is an on-device step.
+`bin/steamlaunch.sh <appid>` with no game file launches the appid as a slot (`/var/lib/containers/lepton/play-slots/<appid>.apkm`); a
+relaunch stops the previous session with SIGTERM first, so its teardown runs. On a Deck the
+**Lepton: Add Google Play game** icon runs `lepton-google-game-gui --play` (the patched upstream wizard).
 
 ## Status
 
@@ -213,16 +208,26 @@ Padmap reads the pad from evdev inside Android: Lepton's gamepad passthrough bin
 
 ## Steam Deck bundle
 
-`bin/build-deck-bundle.sh [id]` builds `data/deck-dist/<id>/` (Lepton's `.tar.gz`, `.sha256`, `.install.sh`),
-which goes into `bundle/` of the Deck's clone of this repo (user guide: `deck/README.md`). In the runner
-(`runner/build-deck-bundle.sh`, about 70s) it copies the `gapps` stage, applies the patched entry and
-`patches/c2-input-surface.patch`, sysbakes rootfully, then records that sysbake through
-`lepton-customize`'s own validation (`runner/deck-record-sysbake.py` swaps only the rootless helper for the
-prebuilt result) and packages with `lepton-customize package` as tool id `lepton_padmap`. On the Deck,
-`deck/update.sh` pulls, and `deck/install.sh` runs Lepton's own installer when the newest bundle in `bundle/`
-differs from the installed one (`--replace`), then replaces the installed tool's add-on and entry with `addon/` and
-`patches/lepton-x86_64-entry` (the packager only keeps Lepton's own files, so the add-on always comes from
-the checkout). Lepton's runtime fingerprint covers only the rootfs, `services.jar` and the
+The bundle holds Google components, so it is never distributed: each Deck builds its own with
+`deck/build-bundle.sh`, which `deck/install.sh` runs when nothing (or an older auto-built bundle) is installed. It
+downloads the pinned inputs in `deck/bundle.env` from their official sources (Lepton's signed GitHub release,
+Google's API 34 r14 Play system image from dl.google.com), checks their pinned checksums, then runs Lepton's own
+`lepton-customize` rootlessly: base stage, `inject --with-ndk --with-gapps`, `sysbake --rendering amd` (with
+`deck/weston-via-gamescope` standing in for Weston when it isn't installed) and `package` as tool id
+`lepton_padmap`, into `bundle/`. Bump `BUNDLE_ID` with any input or recipe change; Decks rebuild on their next
+Update.
+
+`bin/build-deck-bundle.sh [id]` builds the same bundle in the runner into `data/deck-dist/<id>/` (Lepton's
+`.tar.gz`, `.sha256`, `.install.sh`), for testing on your own Deck by copying it into `bundle/` (a bundle there
+wins over building). In the runner (`runner/build-deck-bundle.sh`, about 70s) it copies the `gapps` stage,
+applies `patches/apply.sh`, sysbakes rootfully, then records that sysbake through `lepton-customize`'s own
+validation (`runner/deck-record-sysbake.py` swaps only the rootless helper for the prebuilt result) and packages
+with `lepton-customize package`.
+
+On the Deck, `deck/update.sh` pulls, and `deck/install.sh` runs Lepton's own installer when the bundle differs
+from the installed one (`--replace`) and deletes the consumed bundle files, then replaces the installed tool's
+add-on with `addon/` and applies `patches/apply.sh` (the packager only keeps Lepton's own files, so the add-on
+always comes from the checkout). Lepton's runtime fingerprint covers only the rootfs, `services.jar` and the
 sysbaked `packages.xml`, so add-on changes (Padmap included) ship by `git pull` alone; Android-side changes
 (stage, sysbake) need a new bundle.
 

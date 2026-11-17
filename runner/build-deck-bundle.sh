@@ -1,6 +1,6 @@
 #!/bin/bash
 # Runs as root inside lepton-runner: packages the installable Lepton + Padmap bundle (the GApps + NDK stage and
-# the patched Steam entry) with lepton-customize. Output: $W/deck-dist/lepton-x86_64-<id>.*
+# the patched release files) with lepton-customize. Output: $W/deck-dist/lepton-x86_64-<id>.*
 # The packager keeps only Lepton's own files, so the add-on reaches the Deck through deck/install.sh instead.
 # Usage: build-deck-bundle.sh <bundle-id>
 set -euo pipefail
@@ -22,8 +22,7 @@ done
 step "copying the gapps stage"
 as_dev cp -a "$WORK/gapps-stage" "$STAGE"
 T="$STAGE/compat_tool"
-install -o dev -g dev -m 755 "$W/patches/lepton-x86_64-entry" "$T/lepton-x86_64-entry"
-as_dev git -C "$STAGE" apply "$W/patches/c2-input-surface.patch"
+as_dev bash "$W/patches/apply.sh" "$T"
 
 step "sysbake"
 bash "$W/sysbake-rootful.sh" "$STAGE" "$BAKE"

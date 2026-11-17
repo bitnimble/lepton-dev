@@ -14,6 +14,7 @@ cd "$W/run"
 LOG="$W/run/$CTX.log"
 "$LEPTON" start "$APK" >| "$LOG" 2>&1 &
 LPID=$!
+echo "$LPID" >| "$W/run/$CTX.pid"
 
 wait_boot "$LOG" "$LPID" 600 || exit 1
 echo "booted; waiting ${WAIT}s for app"

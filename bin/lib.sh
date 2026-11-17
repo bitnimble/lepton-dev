@@ -24,7 +24,7 @@ launch_prepare() {
     runner_exec bash "$W/setup-rootful.sh" >/dev/null
 }
 
-# Drop a context's prior container and run artifacts.
+# Stop a context's prior session and drop its run artifacts.
 launch_clear() {
-    runner_exec bash -c "podman rm -f 'lepton-$1' >/dev/null 2>&1; rm -f '$W/run/$1.log' '$W/run/$1.png'"
+    runner_exec bash -c "source '$W/lepton-env.sh' && stop_ctx '$1' && rm -f '$W/run/$1.log' '$W/run/$1.png'"
 }

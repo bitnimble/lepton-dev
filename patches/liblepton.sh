@@ -1225,6 +1225,4 @@ function print_apk_info()
     echo "MIN SDK VERSION: $("${APK_INFO_EXTRACTOR_PATH}" --print-min-sdk-version "$1")"
 }
 
-# Play-install overrides (launch-by-package, Play-only boot); sourced last so they
-# wrap the originals defined above and in the modules.
-[[ -f "${LEPTON_DIR}/lepton-play.sh" ]] && source "${LEPTON_DIR}/lepton-play.sh"
+if [[ -f "${LEPTON_DIR}/../lepton-padmap/lepton-play.sh" ]]; then source "${LEPTON_DIR}/../lepton-padmap/lepton-play.sh"; fi

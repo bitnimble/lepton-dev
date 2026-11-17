@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Stands in for `weston --backend=headless --socket=NAME` (Lepton's sysbake helper) where Weston isn't installed:
+# a headless gamescope serves the Wayland socket.
+set -euo pipefail
+socket=
+for arg; do [[ "$arg" != --socket=* ]] || socket="${arg#--socket=}"; done
+[[ -n "$socket" ]] || { echo "weston-via-gamescope: --socket=NAME required" >&2; exit 2; }
+own="$(mktemp -d)"
+XDG_RUNTIME_DIR="$own" gamescope --backend headless -W 1280 -H 800 -- sleep infinity &
+gs=$!
+trap 'kill "$gs" 2>/dev/null; rm -rf "$own" "$XDG_RUNTIME_DIR/$socket"' EXIT
+trap 'exit 0' TERM INT
+for _ in $(seq 100); do [[ -S "$own/gamescope-0" ]] && break; sleep 0.1; done
+ln -sfn "$own/gamescope-0" "$XDG_RUNTIME_DIR/$socket"
+wait "$gs"
