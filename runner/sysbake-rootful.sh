@@ -20,4 +20,5 @@ ensure_cgroup sysbake
 cd "$DST/compat_tool"
 LEPTON_ALLOW_LOCAL_SYSBAKE=1 timeout 1500 ./lepton sysbake
 getfattr -R -d -m '^user\.' sysbake >| sysbake.xattrs
-[[ -f sysbake/system/packages.xml ]] && echo "SYSBAKE-DONE: $(du -sh sysbake | cut -f1)"
+[[ -f sysbake/system/packages.xml ]] || { echo "sysbake produced no packages.xml" >&2; exit 1; }
+echo "SYSBAKE-DONE: $(du -sh sysbake | cut -f1)"

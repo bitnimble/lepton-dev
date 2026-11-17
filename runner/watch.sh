@@ -1,6 +1,7 @@
 #!/bin/bash
 # Runs inside lepton-runner: every 30s, record app pid + resumed activity and a screenshot for a context.
 # Usage: watch.sh <ctx> <package>
+set -uo pipefail
 CTX="$1"; PKG="$2"
 OUT=/var/lib/containers/lepton/run/watch-$CTX
 mkdir -p "$OUT"

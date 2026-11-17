@@ -37,3 +37,20 @@ ensure_audio() {
 ensure_cgroup() {
     mkdir -p "/sys/fs/cgroup/lepton-$1"
 }
+
+# Wait up to $3s (default 900) for launcher pid $2 to log "Boot complete!" to $1.
+wait_boot() {
+    local log="$1" lpid="$2" timeout="${3:-900}" n
+    for ((n = 0; n < timeout; n++)); do
+        grep -q "Boot complete!" "$log" && return 0
+        kill -0 "$lpid" 2>/dev/null || { echo "launcher exited early"; tail -40 "$log"; return 1; }
+        sleep 1
+    done
+    echo "boot timeout"; tail -40 "$log"; return 1
+}
+
+# Screenshot context $1 to host path $2.
+screencap_ctx() {
+    podman exec "lepton-$1" /system/bin/screencap -p /data/local/tmp/screen.png
+    podman cp "lepton-$1:/data/local/tmp/screen.png" "$2"
+}
