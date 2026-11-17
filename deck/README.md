@@ -62,7 +62,7 @@ Padmap starts with every launch and maps the controller through the game's layou
 - **+ Tap**, **+ Stick**, **+ Aim** add a control, already selected (yellow). Drag it onto the game's button.
 - Bind it from the Deck. A tap: press its button. A stick: move the stick. An aim: press its button, then move
   the stick that aims it (the label shows `LB+?` until you do). The style menu next to **Done** shows the buttons
-  as Xbox (the Deck's own labels), Nintendo or PlayStation ones.
+  as Steam (the Deck's own labels), Xbox, Nintendo or PlayStation ones.
 - Tap a control to select it again and rebind, move or resize it. **Smaller** / **Larger** resize, **Delete**
   removes it (these appear while a control is selected).
 - A selected aim has a checkbox, **Aim with LS when RS is idle** (off by default): the other stick aims the skill
