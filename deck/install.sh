@@ -28,6 +28,12 @@ trap finish EXIT
 
 installed_id() { sed -n 's/^ *"bundle_id": *"\(.*\)",\{0,1\}$/\1/p' "$TOOL/BUNDLE.json" 2>/dev/null; }
 
+find_bundles() {  # newest first
+    bundles=("$REPO"/bundle/lepton-x86_64-*.tar.gz)
+    # never ls an empty list: with no arguments it lists the current directory
+    ((${#bundles[@]} == 0)) || mapfile -t bundles < <(ls -t -- "${bundles[@]}")
+}
+
 if command -v podman >/dev/null 2>&1 && [[ -n "$(podman ps -q --filter label=lepton=true 2>/dev/null)" ]]; then
     echo "A Lepton game is running; quit it first." >&2
     exit 1
@@ -35,12 +41,12 @@ fi
 
 source "$REPO/deck/bundle.env"
 installed="$(installed_id)"
-mapfile -t bundles < <(ls -t "$REPO"/bundle/lepton-x86_64-*.tar.gz 2>/dev/null)
+find_bundles
 # A bundle copied into bundle/ wins; otherwise build when nothing, or an older auto-built bundle, is installed.
 if ((${#bundles[@]} == 0)) && [[ -z "$installed" || ( "$installed" == auto-* && "$installed" != "$BUNDLE_ID" ) ]]; then
     echo "Building the Android bundle from Lepton's and Google's downloads (about 2 GB, 15+ minutes)..."
     bash "$REPO/deck/build-bundle.sh"
-    mapfile -t bundles < <(ls -t "$REPO"/bundle/lepton-x86_64-*.tar.gz)
+    find_bundles
 fi
 if ((${#bundles[@]})); then
     newest="${bundles[0]}"
