@@ -70,8 +70,8 @@ Padmap starts with every launch and maps the controller through the game's layou
 - A selected aim has a checkbox, **Aim with LS when RS is idle** (off by default): the other stick aims the skill
   while its own stick is untouched, e.g. cast in the direction you're walking.
 - A game can have several mapping sets (e.g. walking and driving). The **Set 1 ▾** dropdown picks the shown set;
-  **Duplicate** copies it, **Set activation chord** binds the chord that switches to it (hold the buttons, let
-  go) and **Delete set** removes it. In game, a set's chord switches to it and pressing it again returns to set
+  **Set activation chord** binds the chord that switches to it (hold the buttons, let go) and the **⋯** menu
+  has **Duplicate** and **Delete set**. In game, a set's chord switches to it and pressing it again returns to set
   1; a message names the set.
 - **View + Menu** or **Done** saves any changes and returns to the game.
 

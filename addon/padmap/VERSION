@@ -1,1 +1,1 @@
-padmap ea8ee3c 2026-11-18 fix(editor): set dropdown items are plain, like the style menu, not checkboxes
+padmap c43c7ef 2026-11-18 feat(editor): set row: dropdown left; chord, Set activation chord and a ⋯ menu (Duplicate, Delete set) right
