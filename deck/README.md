@@ -59,12 +59,14 @@ are untouched. If a game misbehaves in tiered, launch option `LEPTON_NDK_TRANSLA
 ## Controls
 
 Padmap starts with every launch and maps the controller through the game's layout. Press **View + Menu**
-(Select + Start) to open the layout editor over the game:
+(Select + Start, changeable) to open the layout editor over the game:
 
 - **+ Tap**, **+ Stick**, **+ Aim** add a control, already selected (yellow). Drag it onto the game's button.
 - Bind it from the Deck. A tap: press its button. A stick: move the stick. An aim: press its button, then move
-  the stick that aims it (the label shows `LB+?` until you do). The style menu next to **Done** shows the buttons
-  as Steam (the Deck's own labels), Xbox, Nintendo or PlayStation ones.
+  the stick that aims it (the label shows `LB+?` until you do).
+- The settings (cog) menu next to **Done**: **Button style** shows the buttons as Steam (the Deck's own labels), Xbox,
+  Nintendo or PlayStation ones; **Editor chord** changes the buttons that open and close the editor (pick it, hold
+  the new buttons, let go), for every game.
 - Tap a control to select it again and rebind, move or resize it. **Smaller** / **Larger** resize, **Delete**
   removes it (these appear while a control is selected).
 - A selected aim has a checkbox, **Aim with LS when RS is idle** (off by default): the other stick aims the skill
@@ -73,7 +75,7 @@ Padmap starts with every launch and maps the controller through the game's layou
   **Set activation chord** binds the chord that switches to it (hold the buttons, let go) and the **⋯** menu
   has **Duplicate** and **Delete set**. In game, a set's chord switches to it and pressing it again returns to set
   1; a message names the set.
-- **View + Menu** or **Done** saves any changes and returns to the game.
+- The editor chord or **Done** saves any changes and returns to the game.
 
 For example, an aim skill on L1 aimed with the right stick: **+ Aim**, drag it onto the skill, press **L1**, push
 the **right stick**, **Done**.

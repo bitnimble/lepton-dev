@@ -1,1 +1,1 @@
-padmap cb52db9 2026-11-18 fix(mapper): keep a held set chord latched across an app switch
+padmap 1a2c619 2026-11-18 feat(editor): settings cog with Button style and a changeable editor chord
