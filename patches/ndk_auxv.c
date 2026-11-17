@@ -343,6 +343,11 @@ static int lepton_caller_in_bridge(const void *caller) {
  * (PROT_EXEC) and ART (caller not in the bridge) are left alone. */
 static void *lepton_guest_mmap(void *addr, __SIZE_TYPE__ length, int prot, int flags,
                                int fd, long long offset, const void *caller) {
+    /* Non-exec guest anon mappings only. Unity reserves its heap arena PROT_NONE and
+     * commits later, so requiring PROT_WRITE here misses it and the 2TB check crashes
+     * il2cpp; the bias must include PROT_NONE. Caveat: this also relocates the linker's
+     * PROT_NONE library reservations, which the tiered optimizer cannot handle (SEGV
+     * storm). WR runs light (arm64_hints picks it), where that is harmless. */
     if (!addr && (flags & 0x20) && !(prot & 4) && length >= 0x100000 &&
         length < 0x1000000000UL && lepton_caller_in_bridge(caller)) {
         for (unsigned long a = 0x100000000UL; a < 0x1e0000000000UL; a += 0x1000000000UL) {
