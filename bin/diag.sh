@@ -12,5 +12,5 @@ podman exec \$C /system/bin/logcat -d -b crash | grep -E 'Cmdline|Abort message|
 echo '--- app process lifecycle'
 grep -E 'ActivityManager.*($PKG)|Process $PKG|has died|Force finishing|ANR in' \$D | tail -12
 echo '--- app errors'
-grep -E ' (E|F) ' \$D | grep -iE 'unity|il2cpp|nishiki|pokemon|ndk_translation|libc  |native_bridge|$EXTRA' | tail -25
+grep -E ' (E|F) ' \$D | grep -iE 'unity|il2cpp|ndk_translation|libc  |native_bridge|$EXTRA' | tail -25
 "

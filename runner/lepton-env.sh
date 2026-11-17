@@ -16,7 +16,8 @@ ensure_display() {
     chmod 700 "$XDG_RUNTIME_DIR"
     ensure_audio
     if [[ ! -S "$XDG_RUNTIME_DIR/gamescope-0" ]]; then
-        weston --no-config --backend=headless --renderer=pixman --width=1280 --height=800 \
+        weston --no-config --backend=headless --renderer=pixman \
+            --width="${LEPTON_WIDTH:-1280}" --height="${LEPTON_HEIGHT:-800}" \
             --socket=gamescope-0 --log="$W/weston.log" &
         for _ in $(seq 50); do [[ -S "$XDG_RUNTIME_DIR/gamescope-0" ]] && break; sleep 0.1; done
     fi
