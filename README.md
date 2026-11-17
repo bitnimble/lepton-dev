@@ -15,7 +15,7 @@ touch mapping ([deck/README.md](deck/README.md)).
 | `addon/` | The Lepton + Padmap add-on, shipped as a bundle's `compat_tool/lepton-padmap/`; `addon/padmap/` is Padmap's APK, start script and layouts, vendored by `bin/update-padmap.sh` from [bitnimble/padmap](https://github.com/bitnimble/padmap) (checked out next to this repo) |
 | `deck/` | Deck-side installer/updater and user guide; the Deck runs them from a clone of this repo |
 | `bundle/` (gitignored) | On the Deck: Android bundles copied from `data/deck-dist/<id>/` |
-| `patches/` | Patches to the release's `compat_tool/` (`*.patch`), with the patched `liblepton.sh`, `properties.sh`, `lepton-x86_64-entry` and `ndk_auxv.c` (the NDK compatibility shim, rebuilt and installed over each stage) that `bin/push.sh` installs |
+| `patches/` | Patches to the release's `compat_tool/` (`*.patch`), with the patched `liblepton.sh`, `properties.sh`, `lepton-x86_64-entry`, `lepton-play.sh` (Play-install launch modes) and `ndk_auxv.c` (the NDK compatibility shim, rebuilt and installed over each stage) that `bin/push.sh` installs |
 | `diag/` | Hang-triage probes for a running session |
 | `docs/screens/` | Reference screenshots |
 | `data/` (gitignored) | Release bundle, Google r14 system image, APK/APKM files, sysbox sources/builds, screenshots |
@@ -113,6 +113,27 @@ Deck's Gamescope bridge), so the add-on's session hook runs exactly as on a Deck
 
 Android boots in ~20s with software rendering. Lepton refuses an existing profile whose runtime fingerprint
 (rootfs + sysbake) differs, so switching a game to another stage needs a new app id or a reset.
+
+### Play-installed games (no apk file)
+
+Games that must come from the Play Store install into their own isolated profile (one compatdata per appid),
+then launch by package name with no host apk. Opt-in via env, so the apk-driven path above is untouched
+(`patches/lepton-play.sh`, sourced last from the liblepton fork):
+
+- `LEPTON_PLAY_ONLY=true` boots to the Play Store and installs nothing.
+- `LEPTON_LAUNCH_PACKAGE=<pkg>` launches an already-installed package, resolving its launcher activity at boot.
+- With no game file and neither set, `steamlaunch.sh` reads the profile's `lepton-launch-package` file for the target.
+
+Dev-harness flow (the `bin/` scripts drive `lepton-runner`):
+
+```
+bin/install-game.sh <appid>                 # fresh profile boots to the Play Store; sign in and install
+bin/set-launch-target.sh <appid> --newest   # target the just-installed game (or --list, or a package name)
+bin/steamlaunch.sh <appid>                   # launch it by package
+```
+
+On a Deck the same mechanics ship in the bundle (the compat tool reads `lepton-launch-package` from the Steam
+compatdata); wiring the install and retarget as gaming-mode Steam shortcuts is an on-device step.
 
 ## Status
 
