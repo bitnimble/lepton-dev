@@ -38,8 +38,7 @@ install_helper() {
 }
 
 show_wait() {
-    guest am start -n app.lepton.helper/.WaitActivity --es title "Updating Google Play services" \
-        --es detail "This closes by itself when it's done." >/dev/null 2>&1
+    guest am start -n app.lepton.helper/.WaitActivity --es title "Updating Google Play services" >/dev/null 2>&1
 }
 
 received_bytes() { guest cat /proc/net/dev 2>/dev/null | awk 'NR > 2 && $1 != "lo:" { sum += $2 } END { print sum + 0 }'; }

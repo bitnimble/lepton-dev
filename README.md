@@ -15,7 +15,7 @@ touch mapping ([deck/README.md](deck/README.md)).
 | `addon/` | The Lepton + Padmap add-on, shipped as a bundle's `compat_tool/lepton-padmap/`; `addon/padmap/` is Padmap's start script and layouts, vendored by `bin/update-padmap.sh` from [bitnimble/padmap](https://github.com/bitnimble/padmap) (checked out next to this repo), plus its built APK |
 | `deck/` | Deck-side installer/updater, bundle builder and user guide; the Deck runs them from a clone of this repo. `artifacts.env` pins the GitHub release holding the built files (Game Manager, Padmap APK, helper APK, NDK shim), which `fetch-artifacts.sh` downloads into place |
 | `manager/` | The Lepton Game Manager (Rust, egui): adds and manages Lepton games in Steam, from Desktop or Gaming Mode |
-| `helper/` | The Lepton helper app: Android screens the add-on shows itself, e.g. the spinner while `addon/setup-google.sh` lets Play update Google services |
+| `helper/` | The Lepton helper app (Kotlin + Compose, its own Gradle project): Android screens the add-on shows itself, e.g. the spinner while `addon/setup-google.sh` lets Play update Google services |
 | `bundle/` (gitignored) | On the Deck: Android bundles built by `deck/build-bundle.sh` or copied from `data/deck-dist/<id>/` |
 | `patches/` | Patched release files that `patches/apply.sh` installs into a `compat_tool/` (runner stages via `bin/push.sh`, the runner's Deck bundle, the Deck via `deck/install.sh`): `liblepton.sh`, `properties.sh`, `lepton-x86_64-entry` and the NDK compatibility shim (`ndk_auxv.c`, built to `liblepton_ndk_auxv.so` by `bin/build-ndk-shim.sh`); the `*.patch` files document the `liblepton.sh` and entry changes |
 | `diag/` | Hang-triage probes for a running session |
