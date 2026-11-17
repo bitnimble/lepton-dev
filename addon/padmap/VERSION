@@ -1,1 +1,1 @@
-padmap d49a3c2 2026-11-17 feat(editor): per-type binding glyphs and an Xbox/Nintendo/PlayStation style menu
+padmap 35cf518 2026-11-17 fix(editor): style Select/Start per controller (View/Menu, −/+, Create/Options)
