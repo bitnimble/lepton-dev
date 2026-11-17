@@ -1,1 +1,1 @@
-padmap c43c7ef 2026-11-18 feat(editor): set row: dropdown left; chord, Set activation chord and a ⋯ menu (Duplicate, Delete set) right
+padmap cb52db9 2026-11-18 fix(mapper): keep a held set chord latched across an app switch
