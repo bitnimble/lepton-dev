@@ -77,8 +77,19 @@ typedef struct {
     void *address;
 } lepton_dl_info;
 extern int dladdr(const void *, lepton_dl_info *);
+extern void *dlsym(void *, const char *);
+#define LEPTON_RTLD_NEXT ((void *)-1L)
 #define EXPORT __attribute__((visibility("default")))
 #define LOG(message) __android_log_write(4, "LeptonNdkAuxv", message)
+
+/* Resolve the translator's own export past this interposer. Lets a build whose
+ * private ABI we do not recognise fall through to the stock implementation
+ * instead of crashing. */
+static void *lepton_real(const char *mangled, void **cache) {
+    void *f = __atomic_load_n(cache, __ATOMIC_ACQUIRE);
+    if (!f) { f = dlsym(LEPTON_RTLD_NEXT, mangled); __atomic_store_n(cache, f, __ATOMIC_RELEASE); }
+    return f;
+}
 
 static unsigned char *bridge_base;
 static const unsigned char bridge_id[16] = {
@@ -370,7 +381,12 @@ EXPORT void fallback(void *)
     __asm__("_ZN15ndk_translation15LightTranslator13UndefinedInsnEv");
 EXPORT void fallback(void *frontend) {
     unsigned char *base = bridge_for_caller(__builtin_return_address(0));
-    if (!base) { raise(4); return; }
+    if (!base) {
+        static void *real;
+        void (*f)(void *) = lepton_real("_ZN15ndk_translation15LightTranslator13UndefinedInsnEv", &real);
+        if (f) f(frontend); else *(unsigned char *)frontend = 0;
+        return;
+    }
     /* success_ at 0x00. A failed translation discards the block and invokes
      * InterpretInsn. The original interpreter still handles (and rejects)
      * every opcode outside our explicit register-read and event-hint additions. */
@@ -381,7 +397,12 @@ EXPORT void interpret(void *)
     __asm__("_ZN15ndk_translation13InterpretInsnEPNS_12ProcessStateE");
 EXPORT void interpret(void *state) {
     unsigned char *base = bridge_for_caller(__builtin_return_address(0));
-    if (!base) { raise(4); return; }
+    if (!base) {
+        static void *real;
+        void (*f)(void *) = lepton_real("_ZN15ndk_translation13InterpretInsnEPNS_12ProcessStateE", &real);
+        if (f) f(state);
+        return;
+    }
     /* CPUState's X0..X30 begin at 0; insn_addr is at 0x310. */
     unsigned long *pc = (void *)((char *)state + 0x310);
     /* A raw svc read(fd, buf, 255) from interpreted code of /proc/.../syscall is the
