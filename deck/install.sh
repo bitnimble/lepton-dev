@@ -94,3 +94,26 @@ if "$REPO/deck/lepton-manager" --add-to-steam; then
 else
     echo "[WARN] Couldn't add Lepton Game Manager to Steam; open it from the desktop and pick Add Lepton Game Manager to Steam"
 fi
+
+# Android's audio and video codecs allocate from the DMA-BUF system heap, which SteamOS leaves root-only
+HEAP="${LEPTON_DMA_HEAP_DEVICE:-/dev/dma_heap/system}"
+HEAP_RULE=/etc/udev/rules.d/70-lepton-dma-heap.rules
+# SteamOS updates drop /etc changes that no keep-list in here names
+HEAP_KEEP=/etc/atomic-update.conf.d/lepton.conf
+heap_usable() { [[ -r "$HEAP" && -w "$HEAP" ]]; }
+if [[ -c "$HEAP" ]] && ! heap_usable; then
+    sudo_args=(-n)
+    [[ ! -t 0 ]] || sudo_args=()
+    echo "Android's audio and video codecs need $HEAP, which only root can open; adding a udev rule (sudo)..."
+    sudo "${sudo_args[@]}" sh -c "printf '%s\n' 'SUBSYSTEM==\"dma_heap\", KERNEL==\"system\", MODE=\"0666\"' >$HEAP_RULE &&
+        if [ -d ${HEAP_KEEP%/*} ]; then printf '%s\n' $HEAP_RULE >$HEAP_KEEP; fi &&
+        udevadm control --reload && udevadm trigger --subsystem-match=dma_heap --action=change && udevadm settle" || true
+fi
+if [[ ! -c "$HEAP" ]]; then
+    echo "[WARN] This kernel has no $HEAP: Android games will have no audio or video codecs"
+elif heap_usable; then
+    echo "[PASS] Android audio and video codecs can use $HEAP"
+else
+    echo "[WARN] Android games will have no audio or video codecs until $HEAP is usable; in Konsole run:"
+    echo "       bash $REPO/deck/install.sh   (it asks for your password; set one first with passwd if you never have)"
+fi
