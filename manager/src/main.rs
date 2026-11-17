@@ -14,6 +14,9 @@ use steam::{Shortcut, Steam, home};
 const TITLE: &str = "Lepton Game Manager";
 
 fn main() -> eframe::Result {
+    // Steam's overlay preload lists a 32-bit library, which every 64-bit child warns about; it's loaded here already.
+    // SAFETY: no other threads exist yet.
+    unsafe { std::env::remove_var("LD_PRELOAD") };
     if std::env::args().nth(1).as_deref() == Some("--add-to-steam") {
         let code = match add_self_to_steam() {
             Ok(done) => {
