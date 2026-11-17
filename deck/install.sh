@@ -81,3 +81,8 @@ echo "[PASS] Desktop shortcut: Lepton Game Manager"
 if [[ -d "$HOME/.local/share/Steam" ]]; then
     touch "$HOME/.local/share/Steam/.cef-enable-remote-debugging"
 fi
+if "$REPO/deck/lepton-manager" --add-to-steam; then
+    echo "[PASS] Lepton Game Manager is under Non-Steam in your Steam library"
+else
+    echo "[WARN] Couldn't add Lepton Game Manager to Steam; open it from the desktop and pick Add Lepton Game Manager to Steam"
+fi

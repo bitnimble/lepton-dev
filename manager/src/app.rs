@@ -3,14 +3,16 @@ use crate::griddb::{GridDb, Image};
 use crate::lepton;
 use crate::pad::Pad;
 use crate::steam::{Steam, Tool, home};
+use eframe::egui::text::{LayoutJob, TextWrapping};
 use eframe::egui::{
-    self, Align, Align2, Color32, ColorImage, Context, FontId, Key, RichText, ScrollArea, Sense, TextureHandle, TextureOptions,
-    vec2,
+    self, Align, Align2, Color32, ColorImage, Context, FontId, Galley, Key, RichText, ScrollArea, Sense, TextureHandle,
+    TextureOptions, pos2, vec2,
 };
 use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::Duration;
 
@@ -18,6 +20,7 @@ const ACCENT: Color32 = Color32::from_rgb(26, 159, 255);
 const DIM: Color32 = Color32::from_rgb(154, 168, 184);
 const DANGER: Color32 = Color32::from_rgb(229, 72, 77);
 const THUMB: f32 = 180.0;
+const HINT: &str = "A  select     B  back";
 
 #[derive(Clone, Debug)]
 struct Game {
@@ -182,7 +185,8 @@ impl App {
         let mapping = self.steam.tool_mapping();
         let shortcuts = self.steam.shortcuts();
         let exe = std::env::current_exe().ok();
-        self.in_steam = self.overrides.self_added || shortcuts.iter().any(|s| Some(&s.exe) == exe.as_ref());
+        self.in_steam =
+            self.overrides.self_added || exe.is_some_and(|exe| shortcuts.iter().any(|s| crate::is_manager(s, &exe)));
         let mut games: Vec<Game> = shortcuts
             .into_iter()
             .filter(lepton::is_game)
@@ -454,9 +458,13 @@ impl App {
         let title = self.title(&screen);
         self.first_widget = true;
         ui.horizontal(|ui| {
-            ui.heading(RichText::new(title).size(34.0).strong());
+            let hint = ui.painter().layout_no_wrap(HINT.into(), FontId::proportional(22.0), DIM);
+            let title_width = (ui.available_width() - hint.size().x - 24.0).max(0.0);
+            ui.allocate_ui(vec2(title_width, 44.0), |ui| {
+                ui.add(egui::Label::new(RichText::new(title).size(34.0).strong()).truncate());
+            });
             ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
-                ui.label(RichText::new("A  select     B  back").color(DIM));
+                ui.label(RichText::new(HINT).color(DIM));
             });
         });
         if let Some((text, error)) = &self.status {
@@ -489,7 +497,7 @@ impl App {
     fn title(&self, screen: &Screen) -> String {
         let name = |appid: &u32| self.game(*appid).map_or_else(String::new, |g| g.name.clone());
         match screen {
-            Screen::Home => "Lepton Game Manager".into(),
+            Screen::Home => crate::TITLE.into(),
             Screen::Game(id) | Screen::Remove(id) => name(id),
             Screen::ChangeGame(id) => format!("{}: game", name(id)),
             Screen::Rename(id, _) => format!("{}: name", name(id)),
@@ -522,9 +530,14 @@ impl App {
         let focused = ui.ctx().memory(|m| m.has_focus(response.id)) || response.hovered();
         let painter = ui.painter();
         painter.rect_filled(rect, 10.0, if focused { ACCENT.gamma_multiply(0.85) } else { Color32::from_rgb(34, 46, 62) });
-        let left = rect.left_center() + vec2(18.0, 0.0);
-        painter.text(left, Align2::LEFT_CENTER, text, FontId::proportional(24.0), colour);
-        painter.text(rect.right_center() - vec2(18.0, 0.0), Align2::RIGHT_CENTER, detail, FontId::proportional(20.0), if focused { Color32::WHITE } else { DIM });
+        let inner = rect.shrink2(vec2(18.0, 0.0));
+        let detail_colour = if focused { Color32::WHITE } else { DIM };
+        let detail = single_line(painter, detail, 20.0, detail_colour, inner.width() * 0.45);
+        let gap = if detail.size().x > 0.0 { 24.0 } else { 0.0 };
+        let text = single_line(painter, text, 24.0, colour, inner.width() - detail.size().x - gap);
+        painter.galley(pos2(inner.left(), inner.center().y - text.size().y / 2.0), text, colour);
+        let detail_left = inner.right() - detail.size().x;
+        painter.galley(pos2(detail_left, inner.center().y - detail.size().y / 2.0), detail, detail_colour);
         ui.add_space(6.0);
         response.clicked()
     }
@@ -591,7 +604,7 @@ impl App {
                         "Adding to Steam",
                         "Added: it's under Non-Steam in your library",
                         Undo::SelfAdded,
-                        move || SteamClient::add_shortcut("Lepton Game Manager", &exe, None).map(drop),
+                        move || SteamClient::add_shortcut(crate::TITLE, &exe, None).map(drop),
                     );
                     self.overrides.self_added |= started;
                 }
@@ -835,7 +848,7 @@ impl App {
         let size = vec2(THUMB, THUMB);
         let response = match &texture {
             Some(texture) => ui.add(egui::Button::image(egui::Image::new(texture).max_size(size)).min_size(size)),
-            None => ui.add(egui::Button::new(if caption.is_empty() { "…" } else { caption }).min_size(size)),
+            None => ui.add_sized(size, egui::Button::new(if caption.is_empty() { "…" } else { caption }).truncate()),
         };
         self.take_first_focus(&response);
         if response.gained_focus() {
@@ -1057,6 +1070,12 @@ fn game_target(game: &Game) -> String {
     }
 }
 
+fn single_line(painter: &egui::Painter, text: &str, size: f32, colour: Color32, max_width: f32) -> Arc<Galley> {
+    let mut job = LayoutJob::simple_singleline(text.to_string(), FontId::proportional(size), colour);
+    job.wrap = TextWrapping::truncate_at_width(max_width.max(0.0));
+    painter.layout_job(job)
+}
+
 fn decode_thumb(bytes: &[u8]) -> Option<ColorImage> {
     let image = image::load_from_memory(bytes).ok()?.thumbnail(THUMB as u32 * 2, THUMB as u32 * 2).to_rgba8();
     Some(ColorImage::from_rgba_unmultiplied([image.width() as usize, image.height() as usize], image.as_raw()))
@@ -1173,6 +1192,18 @@ mod tests {
         harness.state_mut().handle(Msg::Connected(false));
         assert!(harness.state().busy.is_none(), "the check's result clears its busy overlay");
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn long_row_text_is_cut_to_its_width() {
+        let mut harness = Harness::new_ui(|ui| {
+            let long = "AAAAXY: A Nonlinear 2D Puzzle Platformer ".repeat(10);
+            let galley = single_line(ui.painter(), &long, 24.0, Color32::WHITE, 300.0);
+            assert!(galley.size().x <= 300.0 && galley.elided, "cut to 300px with an ellipsis");
+            let short = single_line(ui.painter(), "UNITE", 24.0, Color32::WHITE, 300.0);
+            assert!(!short.elided, "short text is left whole");
+        });
+        harness.run();
     }
 
     #[test]

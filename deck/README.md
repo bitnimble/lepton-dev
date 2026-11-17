@@ -12,10 +12,9 @@ sources; nothing with Google components is redistributed.
 2. Open `~/lepton-dev/deck/` in Dolphin and run **Install / update Lepton + Padmap** (or
    `bash ~/lepton-dev/deck/update.sh`). The first run downloads about 2 GB and builds the Android bundle (15
    minutes or more, about 8 GB free space needed while building), then Lepton's installer downloads Google's `adb`,
-   installs the tool as `lepton_padmap` and adds the **Lepton Game Manager** desktop icon.
+   installs the tool as `lepton_padmap`, adds the **Lepton Game Manager** desktop icon and adds the manager to your
+   Steam library (under Non-Steam) for Gaming Mode.
 3. Restart Steam (it then opens the local port the Game Manager talks to it through).
-4. Open **Lepton Game Manager** and choose **Add Lepton Game Manager to Steam**, so it's in your library (under
-   Non-Steam) for Gaming Mode.
 
 ## Lepton Game Manager
 
