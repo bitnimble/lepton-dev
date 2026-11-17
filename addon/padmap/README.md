@@ -39,13 +39,23 @@ Press **Select + Start** on the gamepad to open the editor over the game.
 For example, an aim skill on LB aimed with the right stick: **+ Aim**, drag it onto the skill, press **LB**, push
 the **right stick**, **Done**.
 
+### Mapping sets
+
+A game can have several mapping sets, e.g. one for walking and one for driving; the editor shows one at a time.
+The **Set 1 of 2 ▾** menu switches between them, makes a **New set** (a copy of the shown one), sets the chord
+that switches to the shown set (hold its buttons on the pad, then let go) and deletes a set.
+
+While playing, the first set is active. Pressing a set's chord switches to it and a message names the set;
+pressing the active set's chord again returns to the first set. The chord's buttons don't touch the game until
+you let go of them. A chord should be two or more buttons, since it takes its buttons away from every set.
+
 While the editor is open the pad doesn't touch the game.
 
 ## Controls
 
 | Type | Behaviour |
 | --- | --- |
-| `tap` | Touches its spot while the button is held, except while an aim is held (MOBAs end an aim when another finger lands). The button may be a chord like `"LT+RB"`: it fires only while every listed button is held, and a chord suppresses any tap or aim on a subset of its buttons (so `A+B` fires instead of a plain `A`) |
+| `tap` | Touches its spot while the button is held, alongside any held aim or joystick. The button may be a chord like `"LT+RB"`: it fires only while every listed button is held, and a chord suppresses any tap or aim on a subset of its buttons (so `A+B` fires instead of a plain `A`) |
 | `joystick` | When the stick leaves its deadzone: touches down at the centre, then drags in the stick's direction, up to `radius` |
 | `aim` | MOBA-style skill: touches down on the skill while the button is held, drags by the stick up to `radius`, lifts (casts) on release. Without the stick it casts in place; with `"fallback": true` the other stick aims while `stick` is centred |
 
@@ -55,15 +65,29 @@ While the editor is open the pad doesn't touch the game.
 
 ```json
 {
-  "version": 1,
-  "controls": [
-    { "type": "joystick", "stick": "LS", "x": 0.16, "y": 0.75, "radius": 0.12 },
-    { "type": "tap", "button": "A", "x": 0.88, "y": 0.8, "radius": 0.05 },
-    { "type": "tap", "button": "LT+RB", "x": 0.7, "y": 0.9, "radius": 0.05 },
-    { "type": "aim", "button": "RB", "stick": "RS", "fallback": false, "x": 0.75, "y": 0.7, "radius": 0.15 }
+  "version": 2,
+  "sets": [
+    {
+      "controls": [
+        { "type": "joystick", "stick": "LS", "x": 0.16, "y": 0.75, "radius": 0.12 },
+        { "type": "tap", "button": "A", "x": 0.88, "y": 0.8, "radius": 0.05 },
+        { "type": "tap", "button": "LT+RB", "x": 0.7, "y": 0.9, "radius": 0.05 },
+        { "type": "aim", "button": "RB", "stick": "RS", "fallback": false, "x": 0.75, "y": 0.7, "radius": 0.15 }
+      ]
+    },
+    {
+      "chord": "LB+RB+Y",
+      "controls": [
+        { "type": "joystick", "stick": "LS", "x": 0.16, "y": 0.75, "radius": 0.12 },
+        { "type": "tap", "button": "A", "x": 0.5, "y": 0.9, "radius": 0.05 }
+      ]
+    }
   ]
 }
 ```
+
+`sets` is the mapping sets, the first active at the start; `chord` (optional) switches to the set. A version 1
+file, `{"version": 1, "controls": [...]}`, is a single set.
 
 `x` and `y` are fractions of the screen's width and height in the game's orientation; `radius` is a fraction of
 the screen height. Buttons: `A B X Y LB RB LT RT SELECT START HOME L3 R3 UP DOWN LEFT RIGHT`, or `KEY_<hex code>`

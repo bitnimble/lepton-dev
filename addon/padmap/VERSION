@@ -1,1 +1,1 @@
-padmap 16db707 2026-11-17 feat(editor): Steam + PS button style (PlayStation face buttons, Steam's View/Menu/Steam)
+padmap 0d533c1 2026-11-18 fix: read "chord": null as no chord; grant notifications even if the overlay grant fails
