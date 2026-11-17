@@ -57,6 +57,8 @@ if ((${#bundles[@]})); then
     done
 fi
 [[ -d "$TOOL/compat_tool" ]] || { echo "Lepton + Padmap isn't installed; see the messages above." >&2; exit 1; }
+bash "$REPO/deck/fetch-artifacts.sh"
+echo "[PASS] Game Manager, Padmap and NDK shim match deck/artifacts.env"
 
 rm -rf "$ADDON.new"
 cp -r "$REPO/addon" "$ADDON.new"

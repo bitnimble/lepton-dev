@@ -6,6 +6,7 @@
 set -euo pipefail
 REPO="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 source "$REPO/deck/bundle.env"
+source "$REPO/deck/download.sh"
 CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/lepton-padmap"
 DL="$CACHE/downloads"
 WORK="$CACHE/build"
@@ -13,19 +14,6 @@ REL="lepton-x86_64-$LEPTON_RELEASE"
 GH="https://github.com/pjohno/lepton-x86_64/releases/download/$LEPTON_RELEASE"
 ZIP="$DL/${GOOGLE_IMAGE_URL##*/}"
 step() { printf '%(%T)T == %s\n' -1 "$*"; }
-
-fetch() {  # fetch URL FILE
-    [[ -f "$2" ]] && return
-    curl -fL --retry 5 -C - -o "$2.part" "$1"
-    mv "$2.part" "$2"
-}
-
-verify() {  # verify sha256|sha1 HASH FILE
-    "${1}sum" -c --quiet - <<< "$2  $3" && return
-    rm -f -- "$3"
-    echo "$3 does not match its pinned checksum and was deleted; run again." >&2
-    exit 1
-}
 
 mkdir -p "$DL"
 free_gb="$(df -BG --output=avail "$CACHE" | tail -1 | tr -dc 0-9)"

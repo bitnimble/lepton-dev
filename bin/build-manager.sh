@@ -1,6 +1,6 @@
 #!/bin/bash
-# Host-side: builds manager/ in a Debian 12 container (glibc 2.36, older than any SteamOS 3) and vendors the
-# release binary as deck/lepton-manager. With --test, runs the tests and clippy instead.
+# Host-side: builds manager/ in a Debian 12 container (glibc 2.36, older than any SteamOS 3) into
+# deck/lepton-manager. With --test, runs the tests and clippy instead.
 set -euo pipefail
 R="$(cd "$(dirname "$0")/.." && pwd)"
 IMAGE=lepton-manager-build

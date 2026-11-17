@@ -3,3 +3,6 @@
 !/bundle/.gitkeep
 __pycache__/
 /manager/target/
+/deck/lepton-manager
+/addon/padmap/padmap.apk
+/patches/liblepton_ndk_auxv.so

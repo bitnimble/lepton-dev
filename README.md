@@ -12,8 +12,8 @@ touch mapping ([deck/README.md](deck/README.md)).
 | `runner/` | Files that run **inside** `lepton-runner`: image (`Containerfile`), env, launch/sysbake/stage/bundle scripts |
 | `bin/` | Host-side helpers (run from this dev container via the docker socket) |
 | `host/` | Scripts run as **root on the docker host** (via privileged `nsenter`); see Host changes |
-| `addon/` | The Lepton + Padmap add-on, shipped as a bundle's `compat_tool/lepton-padmap/`; `addon/padmap/` is Padmap's APK, start script and layouts, vendored by `bin/update-padmap.sh` from [bitnimble/padmap](https://github.com/bitnimble/padmap) (checked out next to this repo) |
-| `deck/` | Deck-side installer/updater, bundle builder, the Lepton Game Manager binary (`lepton-manager`) and user guide; the Deck runs them from a clone of this repo |
+| `addon/` | The Lepton + Padmap add-on, shipped as a bundle's `compat_tool/lepton-padmap/`; `addon/padmap/` is Padmap's start script and layouts, vendored by `bin/update-padmap.sh` from [bitnimble/padmap](https://github.com/bitnimble/padmap) (checked out next to this repo), plus its built APK |
+| `deck/` | Deck-side installer/updater, bundle builder and user guide; the Deck runs them from a clone of this repo. `artifacts.env` pins the GitHub release holding the built files (Game Manager, Padmap APK, NDK shim), which `fetch-artifacts.sh` downloads into place |
 | `manager/` | The Lepton Game Manager (Rust, egui): adds and manages Lepton games in Steam, from Desktop or Gaming Mode |
 | `bundle/` (gitignored) | On the Deck: Android bundles built by `deck/build-bundle.sh` or copied from `data/deck-dist/<id>/` |
 | `patches/` | Patched release files that `patches/apply.sh` installs into a `compat_tool/` (runner stages via `bin/push.sh`, the runner's Deck bundle, the Deck via `deck/install.sh`): `liblepton.sh`, `properties.sh`, `lepton-x86_64-entry` and the NDK compatibility shim (`ndk_auxv.c`, built to `liblepton_ndk_auxv.so` by `bin/build-ndk-shim.sh`); the `*.patch` files document the `liblepton.sh` and entry changes |
@@ -91,7 +91,13 @@ bin/pad.sh press a | stick l 20000 0 | trigger r 255                # virtual St
 bin/lepton-padmap.sh install|edit [ctx] | report                    # add-on CLI, run in the runner
 bin/update-padmap.sh                                                # build ../padmap, vendor it into addon/padmap/
 bin/build-deck-bundle.sh [id]                                       # Steam Deck bundle -> data/deck-dist/<id>/
+bin/release.sh                                                      # publish the built files from pushed HEAD
+deck/fetch-artifacts.sh                                             # or download the pinned ones instead of building
 ```
+
+Built files (`deck/lepton-manager`, `addon/padmap/padmap.apk`, `patches/liblepton_ndk_auxv.so`) are gitignored.
+`bin/release.sh` builds all three from pushed HEAD, publishes them as GitHub release `artifacts-<commit>` and writes
+`deck/artifacts.env`; committing that is what ships them to Decks.
 
 ### Browser remote control
 
@@ -147,7 +153,7 @@ running. Steam opens that port when `~/.local/share/Steam/.cef-enable-remote-deb
 (`deck/install.sh` creates it). Lepton-side state is the compatdata files above; installed packages come from the
 profile's `baked/data_overlay/app/` through `podman unshare`. The gamepad (gilrs) drives egui's own keyboard focus
 navigation: D-pad and left stick move focus, A is Enter, B is Escape. `bin/build-manager.sh` builds in a Debian 12
-container (glibc 2.36, so the binary runs on any SteamOS 3) and vendors it as `deck/lepton-manager`; its tests
+container (glibc 2.36, so the binary runs on any SteamOS 3) into `deck/lepton-manager`; its tests
 cover the VDF parsers, Steam/Lepton files, the DevTools round trip against a fake Steam and the UI navigation
 (egui_kittest).
 
