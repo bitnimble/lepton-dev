@@ -12,41 +12,41 @@ sources; nothing with Google components is redistributed.
 2. Open `~/lepton-dev/deck/` in Dolphin and run **Install / update Lepton + Padmap** (or
    `bash ~/lepton-dev/deck/update.sh`). The first run downloads about 2 GB and builds the Android bundle (15
    minutes or more, about 8 GB free space needed while building), then Lepton's installer downloads Google's `adb`,
-   installs the tool as `lepton_padmap` and adds desktop icons.
-3. Restart Steam.
+   installs the tool as `lepton_padmap` and adds the **Lepton Game Manager** desktop icon.
+3. Restart Steam (it then opens the local port the Game Manager talks to it through).
+4. Open **Lepton Game Manager** and choose **Add Lepton Game Manager to Steam**, so it's in your library (under
+   Non-Steam) for Gaming Mode.
 
-## Update
+## Lepton Game Manager
 
-Desktop icon **Lepton: Update Lepton + Padmap** (or `bash ~/lepton-dev/deck/update.sh`), with no game running:
-it runs `git pull`, then replaces the installed tool's add-on (Padmap included) and patched files with the
-checkout's. When the update moves to a new Android build, it rebuilds and replaces the bundle in place. Games,
-sign-ins and layouts are kept either way. Restart Steam after a bundle update.
+Everything else happens in the Game Manager, from Desktop or Gaming Mode, with the controller (A selects, B goes
+back; Steam + X opens the keyboard). Changes apply to the running Steam: it never has to be closed.
 
-A bundle copied into `~/lepton-dev/bundle/` (e.g. a test build from lepton-dev's `bin/build-deck-bundle.sh`)
-is installed instead of building.
+- **Add a game**: from **Google Play** (name it; its first launch opens the Play Store: sign in, install the game,
+  quit, and the app you installed becomes the shortcut's game) or from an `.apk` / `.apkm` file in Downloads,
+  Desktop or your home folder. Each game gets its own Android, with its own Google sign-in and saves.
+- A game's page: **Play**, **Game** (for Play games: which installed app it launches, or pick another in the Play
+  Store on next launch), **Name**, **Runtime** (which installed Lepton runs it), **Artwork** (capsule, header,
+  hero, logo and icon, from an image file or from SteamGridDB with your API key in **Settings**), **Open the Play
+  Store on next launch** (sign in to Google again), the **Google device ID** (if Google says the device isn't
+  certified, register it at google.com/android/uncertified) and **Remove** (optionally with the game's data).
+- **Runtimes** lists the installed Lepton tools; **Update Lepton + Padmap** pulls this checkout and reinstalls,
+  **Save crash report** writes one to the Desktop.
 
-## Add a game
+The first time, the manager may ask to connect to Steam: **Allow**, then restart Steam once. It uses Steam's
+local debugging port (127.0.0.1:8080, the same one Decky Loader uses), which lets local programs control Steam.
 
-1. Desktop icon **Lepton: Add Google game (lepton_padmap)**: pick the game's `.apkm`. Step 1 shows the Play
-   Store: sign in to Google, tap **Done**. Step 2 opens the game, tap **Done**. Step 3 asks you to exit Steam
-   and adds the shortcut. If Google says the device isn't certified, register the GSF ID the dialog shows at
-   google.com/android/uncertified.
-2. Gaming Mode, the game's **Controller settings > Edit Layout > Default Action Set > Always-On Command >
-   System > Touchscreen Native Support**, so taps on the screen reach Android as real touches.
+In Gaming Mode, also set each game's **Controller settings > Edit Layout > Default Action Set > Always-On Command
+> System > Touchscreen Native Support**, so taps on the screen reach Android as real touches.
 
-## Add a game from Google Play
+Launch options still work too (**Properties > General**): `LEPTON_PLAY_ONLY=true %command%` opens the Play Store
+(the newest installed app becomes a Play game's game; remove the option afterwards), and
+`LEPTON_LAUNCH_PACKAGE=<package name> %command%` makes a Play game launch that package from now on.
 
-For games you don't have an `.apkm` for: desktop icon **Lepton: Add Google Play game**, then name the shortcut.
-Step 1 opens the Play Store: sign in, install the game, tap **Done**; the app installed last becomes the shortcut's
-game. Step 2 opens the game, tap **Done**. Step 3 asks you to exit Steam and adds the shortcut. Each such
-shortcut is its own Android profile with its own sign-in. Then set Touchscreen Native Support as above.
-
-To change which app the shortcut launches, from Gaming Mode, set its launch options (**Properties > General**):
-
-- `LEPTON_PLAY_ONLY=true %command%` opens the Play Store; install or pick the game, then quit. The newest
-  installed app becomes the game. Remove the option afterwards.
-- `LEPTON_LAUNCH_PACKAGE=<package name> %command%` launches that package (e.g. `jp.pokemon.pokemonunite`) and
-  keeps it as the game, so the option can be removed after one launch.
+The update keeps games, sign-ins and layouts, and rebuilds the Android bundle when the update moves to a new
+Android build (restart Steam afterwards). A bundle copied into `~/lepton-dev/bundle/` (e.g. a test build from
+lepton-dev's `bin/build-deck-bundle.sh`) is installed instead of building. Without the manager:
+`bash ~/lepton-dev/deck/update.sh`.
 
 Lepton picks the ARM translator mode per game: the fast tiered mode when the game's code allows it (Pokémon
 UNITE does), falling back to the light mode for the next launch if a game exits early in tiered. The add-on
@@ -80,8 +80,7 @@ Pokémon UNITE comes with a starting layout: left stick moves, A attacks, R1 / R
 Unite Move aimed with the right stick, X uses the battle item, Y recalls. Its positions are approximate, so
 check them in the editor in your first match.
 
-Layouts are plain JSON, one file per game, in `~/.config/padmap/layouts/` (desktop icon **Lepton: Open Padmap
-layouts**). They sync both ways with the running game every few seconds, so hand edits apply live and editor
+Layouts are plain JSON, one file per game, in `~/.config/padmap/layouts/`. They sync both ways with the running game every few seconds, so hand edits apply live and editor
 saves land there. The format is in [Padmap's README](../addon/padmap/README.md#layout-files).
 
 Steam launch options for a game: `LEPTON_PADMAP=0 %command%` turns Padmap off, `LEPTON_NDK_TRANSLATION_MODE=<mode>
@@ -98,10 +97,10 @@ Every launch writes `~/lepton-logs/<appid>-<date>-<time>/` (the newest is `~/lep
 | `logcat-000`, `logcat-001`, … | All of Android's logs (`logcat -b all`; Padmap's lines are tagged `Padmap`), in 32 MB parts; the newest four are kept |
 | `tombstones/`, `anr/`, `system/dropbox/` | Native crashes, ANRs and crash reports from that launch |
 
-To report a problem, use the desktop icon **Lepton: Save crash report** (or `~/.local/bin/lepton-padmap report`):
-it writes `~/Desktop/lepton-report-<date>.tar.gz` with the last five launches, Lepton's own logcats, your layouts,
+To report a problem, use **Save crash report** in the Game Manager (or `~/.local/bin/lepton-padmap report`): it
+writes `~/Desktop/lepton-report-<date>.tar.gz` with the last five launches, Lepton's own logcats, your layouts,
 system details and this boot's kernel journal and user-session journal (Steam, Gamescope and crash lines only:
-GPU resets, overlay crashes), so save it before rebooting. Send that file. **Lepton: Open logs** opens the folder.
+GPU resets, overlay crashes), so save it before rebooting. Send that file.
 
 Steam's performance overlay works because the add-on runs Lepton's Gamescope from a capability-free copy in
 `~/.cache/lepton-padmap/bin/`; if the overlay freezes the game every few seconds or vanishes, include a report.

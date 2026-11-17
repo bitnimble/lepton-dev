@@ -2,12 +2,19 @@
 # Games installed from the Play Store. A "Play slot" is a placeholder .apkm (a text file starting with
 # lepton-play-slot) that Steam launches like any game; its Android profile (the shortcut's compatdata) holds a
 # game installed from the Play Store and launched by package name, recorded in <compatdata>/lepton-launch-package.
-#   nothing recorded, LEPTON_PLAY_ONLY=true or a Google sign-in launch: open the Play Store; when it stops, the
-#     newest installed app becomes the slot's game
+#   nothing recorded, LEPTON_PLAY_ONLY=true or a Google sign-in launch (also <compatdata>/lepton-open-play-store,
+#     for one launch of any game): open the Play Store; when it stops, the newest installed app becomes the
+#     slot's game
 #   LEPTON_LAUNCH_PACKAGE=<pkg>: launch that package and record it
 # Sourced at the end of liblepton.sh, so these wrap the originals; anything that is not a slot is untouched.
 
 PLAY_SLOT_MARKER=lepton-play-slot
+
+# One launch with the Play Store, requested by the Lepton Game Manager.
+if [[ -n "${STEAM_COMPAT_DATA_PATH:-}" && -f "${STEAM_COMPAT_DATA_PATH}/lepton-open-play-store" ]]; then
+    rm -f -- "${STEAM_COMPAT_DATA_PATH}/lepton-open-play-store"
+    export LEPTON_GOOGLE_SIGNIN=true
+fi
 
 eval "lepton_orig_$(declare -f prepare_apkm)"
 eval "lepton_orig_$(declare -f get_app_id)"

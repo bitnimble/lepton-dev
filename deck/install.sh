@@ -67,23 +67,17 @@ echo "[PASS] Add-on and patches updated from $REPO ($(git -C "$REPO" log -1 --fo
 
 mkdir -p "$HOME/.local/bin" "$APPS" "$HOME/lepton-logs" "$LAYOUTS"
 ln -sfn "$ADDON/lepton-padmap" "$HOME/.local/bin/lepton-padmap"
-shortcut() {
-    local file="$1" name="$2" comment="$3" exec="$4" icon="$5"
-    printf '[Desktop Entry]\nType=Application\nName=%s\nComment=%s\nExec=%s\nIcon=%s\nCategories=Game;\n' \
-        "$name" "$comment" "$exec" "$icon" >"$APPS/$file"
-    [[ ! -d "$HOME/Desktop" ]] || install -m 755 "$APPS/$file" "$HOME/Desktop/$file"
-}
-shortcut lepton-padmap-update.desktop "Lepton: Update Lepton + Padmap" "git pull this checkout, then install it" \
-    "konsole -e bash \"$REPO/deck/update.sh\" --pause" system-software-update
-shortcut lepton-padmap-play.desktop "Lepton: Add Google Play game" \
-    "Sign in to Google Play, install a game and add it to Steam" \
-    "$TOOL/compat_tool/tools/lepton-google-game-gui --play" system-software-install
-shortcut lepton-padmap-report.desktop "Lepton: Save crash report" \
-    "Bundle recent Lepton + Padmap logs into a .tar.gz on the Desktop" "$HOME/.local/bin/lepton-padmap report" \
-    document-save
-shortcut lepton-padmap-logs.desktop "Lepton: Open logs" \
-    "Per-launch Lepton + Padmap logs (latest/ is the most recent launch)" "xdg-open $HOME/lepton-logs" \
-    folder-documents
-shortcut lepton-padmap-layouts.desktop "Lepton: Open Padmap layouts" \
-    "Gamepad layouts, one JSON file per game" "xdg-open $LAYOUTS" input-gaming
-echo "[PASS] Desktop shortcuts: Update, Add Google Play game, Save crash report, Open logs, Open Padmap layouts"
+# The Game Manager does what this install's desktop icons and Lepton's per-tool Google icons would
+for dir in "$APPS" "$HOME/Desktop"; do
+    rm -f -- "$dir"/lepton-padmap-*.desktop "$dir"/lepton-x86_64-google-*-lepton_padmap.desktop
+done
+MANAGER="$APPS/lepton-padmap-manager.desktop"
+printf '[Desktop Entry]\nType=Application\nName=%s\nComment=%s\nExec="%s"\nIcon=%s\nCategories=Game;\n' \
+    "Lepton Game Manager" "Add Android games to Steam and manage them" "$REPO/deck/lepton-manager" \
+    input-gaming >"$MANAGER"
+[[ ! -d "$HOME/Desktop" ]] || install -m 755 "$MANAGER" "$HOME/Desktop/lepton-padmap-manager.desktop"
+echo "[PASS] Desktop shortcut: Lepton Game Manager"
+# Steam's local debugging port, which the manager changes the library through; Steam reads this at start
+if [[ -d "$HOME/.local/share/Steam" ]]; then
+    touch "$HOME/.local/share/Steam/.cef-enable-remote-debugging"
+fi

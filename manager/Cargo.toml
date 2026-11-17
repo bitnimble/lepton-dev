@@ -1,0 +1,21 @@
+[package]
+name = "lepton-manager"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+base64 = "0.23"
+eframe = { version = "0.37", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+gilrs = "0.11"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+serde_json = "1"
+tungstenite = "0.30"
+ureq = { version = "3", features = ["json"] }
+
+[profile.release]
+lto = true
+strip = true
+opt-level = "s"
+
+[dev-dependencies]
+egui_kittest = { version = "0.37", features = ["eframe"] }

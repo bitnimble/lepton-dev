@@ -13,9 +13,10 @@ touch mapping ([deck/README.md](deck/README.md)).
 | `bin/` | Host-side helpers (run from this dev container via the docker socket) |
 | `host/` | Scripts run as **root on the docker host** (via privileged `nsenter`); see Host changes |
 | `addon/` | The Lepton + Padmap add-on, shipped as a bundle's `compat_tool/lepton-padmap/`; `addon/padmap/` is Padmap's APK, start script and layouts, vendored by `bin/update-padmap.sh` from [bitnimble/padmap](https://github.com/bitnimble/padmap) (checked out next to this repo) |
-| `deck/` | Deck-side installer/updater, bundle builder and user guide; the Deck runs them from a clone of this repo |
+| `deck/` | Deck-side installer/updater, bundle builder, the Lepton Game Manager binary (`lepton-manager`) and user guide; the Deck runs them from a clone of this repo |
+| `manager/` | The Lepton Game Manager (Rust, egui): adds and manages Lepton games in Steam, from Desktop or Gaming Mode |
 | `bundle/` (gitignored) | On the Deck: Android bundles built by `deck/build-bundle.sh` or copied from `data/deck-dist/<id>/` |
-| `patches/` | Patched release files that `patches/apply.sh` installs into a `compat_tool/` (runner stages via `bin/push.sh`, the runner's Deck bundle, the Deck via `deck/install.sh`): `liblepton.sh`, `properties.sh`, `lepton-x86_64-entry`, `lepton-google-game-gui` and the NDK compatibility shim (`ndk_auxv.c`, built to `liblepton_ndk_auxv.so` by `bin/build-ndk-shim.sh`); the `*.patch` files document the `liblepton.sh` and entry changes |
+| `patches/` | Patched release files that `patches/apply.sh` installs into a `compat_tool/` (runner stages via `bin/push.sh`, the runner's Deck bundle, the Deck via `deck/install.sh`): `liblepton.sh`, `properties.sh`, `lepton-x86_64-entry` and the NDK compatibility shim (`ndk_auxv.c`, built to `liblepton_ndk_auxv.so` by `bin/build-ndk-shim.sh`); the `*.patch` files document the `liblepton.sh` and entry changes |
 | `diag/` | Hang-triage probes for a running session |
 | `docs/screens/` | Reference screenshots |
 | `data/` (gitignored) | Release bundle, Google r14 system image, APK/APKM files, sysbox sources/builds, screenshots |
@@ -80,6 +81,7 @@ bin/start-runner.sh                      # (re)create runner; volumes keep stage
 bin/push-inputs.sh                       # stream data/ inputs into the runner
 bin/push.sh                              # runner scripts, add-on and patches/ into every stage
 bin/build-ndk-shim.sh                    # rebuild patches/liblepton_ndk_auxv.so from patches/ndk_auxv.c
+bin/build-manager.sh [--test]            # build manager/ into deck/lepton-manager (or run its tests + clippy)
 bin/launch.sh /var/lib/containers/lepton/run/app.apk 30          # fresh `lepton start app.apk`, detached
 bin/status.sh <ctx>; bin/lepton-lines.sh <ctx>; bin/diag.sh <ctx> <package>
 bin/shot.sh <ctx> <name>; bin/tap.sh <ctx> <name> x y [x y…]      # 150ms presses: Unity drops short taps
@@ -126,9 +128,26 @@ name in `<compatdata>/lepton-launch-package`. `addon/lepton-play.sh`, sourced at
   stops (Lepton's teardown, while Android is still up), the newest installed app becomes the slot's game;
 - `LEPTON_LAUNCH_PACKAGE=<pkg>`: launch and record that package.
 
+A `lepton-open-play-store` file in any game's compatdata makes its next launch a Google sign-in launch (the file is
+removed); the Game Manager writes it.
+
 `bin/steamlaunch.sh <appid>` with no game file launches the appid as a slot (`/var/lib/containers/lepton/play-slots/<appid>.apkm`); a
-relaunch stops the previous session with SIGTERM first, so its teardown runs. On a Deck the
-**Lepton: Add Google Play game** icon runs `lepton-google-game-gui --play` (the patched upstream wizard).
+relaunch stops the previous session with SIGTERM first, so its teardown runs.
+
+### Lepton Game Manager (`manager/`)
+
+One controller-first app replaces the Deck's desktop icons and Lepton's per-tool Google wizards. It reads Steam's
+files (`userdata/<user>/config/shortcuts.vdf`, `config/config.vdf`'s `CompatToolMapping`,
+`compatibilitytools.d/`) and changes the library through Steam's own client API (`SteamClient.Apps.AddShortcut`,
+`SetShortcutName`, `SpecifyCompatTool`, `SetCustomArtworkForApp`, `SetShortcutIcon`, `RemoveShortcut`, `RunGame`),
+evaluated in Steam's `SharedJSContext` over the Chrome DevTools protocol on 127.0.0.1:8080, so Steam keeps
+running. Steam opens that port when `~/.local/share/Steam/.cef-enable-remote-debugging` exists at its start
+(`deck/install.sh` creates it). Lepton-side state is the compatdata files above; installed packages come from the
+profile's `baked/data_overlay/app/` through `podman unshare`. The gamepad (gilrs) drives egui's own keyboard focus
+navigation: D-pad and left stick move focus, A is Enter, B is Escape. `bin/build-manager.sh` builds in a Debian 12
+container (glibc 2.36, so the binary runs on any SteamOS 3) and vendors it as `deck/lepton-manager`; its tests
+cover the VDF parsers, Steam/Lepton files, the DevTools round trip against a fake Steam and the UI navigation
+(egui_kittest).
 
 ## Status
 
