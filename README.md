@@ -93,14 +93,14 @@ bin/pad.sh press a | stick l 20000 0 | trigger r 255                # virtual St
 bin/lepton-padmap.sh install|edit [ctx] | report                    # add-on CLI, run in the runner
 bin/update-padmap.sh                                                # build ../padmap, vendor it into addon/padmap/
 bin/build-deck-bundle.sh [id]                                       # Steam Deck bundle -> data/deck-dist/<id>/
-bin/release.sh                                                      # publish the built files from pushed HEAD
+bin/release.sh                                                      # publish the built files from HEAD
 deck/fetch-artifacts.sh                                             # or download the pinned ones instead of building
 ```
 
 Built files (`deck/lepton-manager`, `addon/padmap/padmap.apk`, `addon/lepton-helper.apk`,
 `patches/liblepton_ndk_auxv.so`) are gitignored.
-`bin/release.sh` builds all three from pushed HEAD, publishes them as GitHub release `artifacts-<commit>` and writes
-`deck/artifacts.env`; committing that is what ships them to Decks.
+`bin/release.sh` builds them from HEAD, publishes them as GitHub release `build-<UTC time>` (its notes name the
+source commit) and writes `deck/artifacts.env`; committing that and pushing it with its sources ships them to Decks.
 
 ### Browser remote control
 
