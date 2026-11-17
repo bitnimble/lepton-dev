@@ -9,7 +9,7 @@ runner_exec() { docker exec "$RUNNER" "$@"; }
 put() { docker exec -i "$RUNNER" sh -c "mkdir -p \"\$(dirname '$2')\" && cat >| '$2' && chmod ${3:-644} '$2'" < "$1"; }
 
 # Stream a runner file out to the host (same reason docker cp is avoided).
-get() { docker exec "$RUNNER" cat "$1" >| "$2"; }
+pull_file() { docker exec "$RUNNER" cat "$1" >| "$2"; }
 
 # Screenshot a running context to a host path.
 pull_screen() {
