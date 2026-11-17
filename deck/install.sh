@@ -102,10 +102,15 @@ HEAP_RULE=/etc/udev/rules.d/70-lepton-dma-heap.rules
 HEAP_KEEP=/etc/atomic-update.conf.d/lepton.conf
 heap_usable() { [[ -r "$HEAP" && -w "$HEAP" ]]; }
 if [[ -c "$HEAP" ]] && ! heap_usable; then
-    sudo_args=(-n)
-    [[ ! -t 0 ]] || sudo_args=()
-    echo "Android's audio and video codecs need $HEAP, which only root can open; adding a udev rule (sudo)..."
-    sudo "${sudo_args[@]}" sh -c "printf '%s\n' 'SUBSYSTEM==\"dma_heap\", KERNEL==\"system\", MODE=\"0666\"' >$HEAP_RULE &&
+    if [[ -t 0 ]]; then
+        as_root=(sudo)
+    elif [[ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ]] && command -v pkexec >/dev/null; then
+        as_root=(pkexec)
+    else
+        as_root=(sudo -n)
+    fi
+    echo "Android's audio and video codecs need $HEAP, which only root can open; adding a udev rule (${as_root[0]})..."
+    "${as_root[@]}" /bin/sh -c "printf '%s\n' 'SUBSYSTEM==\"dma_heap\", KERNEL==\"system\", MODE=\"0666\"' >$HEAP_RULE &&
         if [ -d ${HEAP_KEEP%/*} ]; then printf '%s\n' $HEAP_RULE >$HEAP_KEEP; fi &&
         udevadm control --reload && udevadm trigger --subsystem-match=dma_heap --action=change && udevadm settle" || true
 fi
@@ -114,6 +119,7 @@ if [[ ! -c "$HEAP" ]]; then
 elif heap_usable; then
     echo "[PASS] Android audio and video codecs can use $HEAP"
 else
-    echo "[WARN] Android games will have no audio or video codecs until $HEAP is usable; in Konsole run:"
-    echo "       bash $REPO/deck/install.sh   (it asks for your password; set one first with passwd if you never have)"
+    echo "[WARN] Android games will have no audio or video codecs until $HEAP is usable. In Desktop Mode, run Update"
+    echo "       Lepton + Padmap again and enter your password, or in Konsole run: bash $REPO/deck/install.sh"
+    echo "       (set a password first with passwd if you never have)"
 fi

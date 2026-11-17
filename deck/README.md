@@ -13,7 +13,8 @@ sources; nothing with Google components is redistributed.
    `bash ~/lepton-dev/deck/update.sh`). The first run downloads about 2 GB and builds the Android bundle (15
    minutes or more, about 8 GB free space needed while building), then Lepton's installer downloads Google's `adb`,
    installs the tool as `lepton_padmap`, downloads the Game Manager and Padmap from this repo's GitHub release, adds the **Lepton Game Manager** desktop icon and adds the manager to your
-   Steam library (under Non-Steam) for Gaming Mode.
+   Steam library (under Non-Steam) for Gaming Mode. Once, it asks for your password (set one first with `passwd` if
+   you never have) to let Android's audio and video codecs use `/dev/dma_heap/system`; SteamOS updates keep this.
 3. Restart Steam (it then opens the local port the Game Manager talks to it through).
 
 ## Lepton Game Manager
