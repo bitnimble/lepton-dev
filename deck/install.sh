@@ -33,9 +33,9 @@ if command -v podman >/dev/null 2>&1 && [[ -n "$(podman ps -q --filter label=lep
     exit 1
 fi
 
-bundles=("$REPO"/bundle/lepton-x86_64-*.tar.gz)
+mapfile -t bundles < <(ls -t "$REPO"/bundle/lepton-x86_64-*.tar.gz 2>/dev/null)
 if ((${#bundles[@]})); then
-    newest="${bundles[-1]}"
+    newest="${bundles[0]}"
     id="${newest##*/lepton-x86_64-}"
     id="${id%.tar.gz}"
     if [[ "$id" == "$(installed_id)" ]]; then
@@ -43,7 +43,7 @@ if ((${#bundles[@]})); then
     else
         [[ ! -d "$TOOL" ]] || args+=(--replace)
         bash "${newest%.tar.gz}.install.sh" "${args[@]}"
-        for old in "${bundles[@]:0:${#bundles[@]}-1}"; do
+        for old in "${bundles[@]:1}"; do
             rm -f -- "$old" "$old.sha256" "${old%.tar.gz}.install.sh"
         done
     fi
