@@ -31,6 +31,7 @@ back; Steam + X opens the keyboard). Changes apply to the running Steam: it neve
   certified, register it at google.com/android/uncertified) and **Remove** (optionally with the game's data).
 - **Runtimes** lists the installed Lepton tools; **Update Lepton + Padmap** pulls this checkout and reinstalls,
   **Save crash report** writes one to the Desktop.
+- **Settings**: **UI zoom** (A steps through 75% to 200%) and the SteamGridDB API key.
 
 The first time, the manager may ask to connect to Steam: **Allow**, then restart Steam once. It uses Steam's
 local debugging port (127.0.0.1:8080, the same one Decky Loader uses), which lets local programs control Steam.

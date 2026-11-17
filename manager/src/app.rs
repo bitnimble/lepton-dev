@@ -123,7 +123,7 @@ pub struct App {
     busy: Option<String>,
     status: Option<(String, bool)>,
     connected: Option<bool>,
-    griddb_key: String,
+    settings: Settings,
     pad: Pad,
     packages: HashMap<u32, Vec<String>>,
     gsf: HashMap<u32, Option<String>>,
@@ -134,6 +134,7 @@ pub struct App {
     thumbs_requested: HashSet<String>,
     task_log: Vec<String>,
     task_running: bool,
+    scrolled_to: Option<egui::Id>,
 }
 
 impl App {
@@ -143,6 +144,8 @@ impl App {
 
     fn with_steam(cc: &eframe::CreationContext<'_>, steam: Steam) -> App {
         style(&cc.egui_ctx);
+        let settings = Settings::read();
+        cc.egui_ctx.set_zoom_factor(settings.zoom);
         let (tx, rx) = channel();
         let repo = std::env::current_exe()
             .ok()
@@ -164,7 +167,7 @@ impl App {
             busy: None,
             status: None,
             connected: None,
-            griddb_key: settings_read(),
+            settings,
             pad: Pad::new(&cc.egui_ctx),
             packages: HashMap::new(),
             gsf: HashMap::new(),
@@ -175,6 +178,7 @@ impl App {
             thumbs_requested: HashSet::new(),
             task_log: Vec::new(),
             task_running: false,
+            scrolled_to: None,
         };
         app.refresh();
         app.check_connection();
@@ -524,9 +528,7 @@ impl App {
         let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 58.0), Sense::click());
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, text));
         self.take_first_focus(&response);
-        if response.gained_focus() {
-            response.scroll_to_me(Some(Align::Center));
-        }
+        self.follow_focus(&response);
         let focused = ui.ctx().memory(|m| m.has_focus(response.id)) || response.hovered();
         let painter = ui.painter();
         painter.rect_filled(rect, 10.0, if focused { ACCENT.gamma_multiply(0.85) } else { Color32::from_rgb(34, 46, 62) });
@@ -547,9 +549,18 @@ impl App {
         if !std::mem::take(&mut self.first_widget) || !self.focus_first {
             return;
         }
+        self.scrolled_to = None;
         response.request_focus();
         if response.ctx.memory(|m| m.has_focus(response.id)) {
             self.focus_first = false;
+        }
+    }
+
+    fn follow_focus(&mut self, response: &egui::Response) {
+        // not gained_focus(): egui moves arrow-key focus at the end of a pass, so the next pass never reports it
+        if response.ctx.memory(|m| m.has_focus(response.id)) && self.scrolled_to != Some(response.id) {
+            self.scrolled_to = Some(response.id);
+            response.scroll_to_me(Some(Align::Center));
         }
     }
 
@@ -620,7 +631,7 @@ impl App {
             self.run_task("Crash report", &cli, vec!["report".into()]);
         }
         if self.row(ui, "Settings", "") {
-            self.push(Screen::Settings(self.griddb_key.clone()));
+            self.push(Screen::Settings(self.settings.steamgriddb_key.clone()));
         }
         if self.row(ui, "Quit", "") {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
@@ -721,6 +732,7 @@ impl App {
     fn text_field(&mut self, ui: &mut egui::Ui, value: &mut String) -> bool {
         let response = ui.add(egui::TextEdit::singleline(value).font(FontId::proportional(26.0)).desired_width(f32::INFINITY));
         self.take_first_focus(&response);
+        self.follow_focus(&response);
         Self::note(ui, "Steam + X opens the on-screen keyboard.");
         response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter))
     }
@@ -772,13 +784,13 @@ impl App {
     }
 
     fn artwork_source(&mut self, ui: &mut egui::Ui, appid: u32, kind: Option<Artwork>) {
-        if self.griddb_key.is_empty() {
+        if self.settings.steamgriddb_key.is_empty() {
             if self.row(ui, "Search SteamGridDB", "needs an API key in Settings") {
                 self.push(Screen::Settings(String::new()));
             }
         } else if self.row(ui, "Search SteamGridDB", "") {
             let name = self.game(appid).map(|g| g.name.clone()).unwrap_or_default();
-            let griddb = GridDb::new(&self.griddb_key);
+            let griddb = GridDb::new(&self.settings.steamgriddb_key);
             self.grid_games.clear();
             self.spawn("Searching", move || Msg::GridGames(griddb.search(&name)));
             self.push(Screen::GridGames(appid, kind));
@@ -816,7 +828,7 @@ impl App {
         }
         for (id, name) in self.grid_games.clone() {
             if self.row(ui, &name, "") {
-                let griddb = GridDb::new(&self.griddb_key);
+                let griddb = GridDb::new(&self.settings.steamgriddb_key);
                 self.grid_images.clear();
                 self.spawn("Loading artwork", move || Msg::GridImages(griddb.images(id, kind)));
                 self.push(Screen::GridImages(appid, kind));
@@ -831,7 +843,7 @@ impl App {
         let mut picked = None;
         ui.horizontal_wrapped(|ui| {
             for image in self.grid_images.clone() {
-                let griddb = GridDb::new(&self.griddb_key);
+                let griddb = GridDb::new(&self.settings.steamgriddb_key);
                 let thumb = image.thumb.clone();
                 let texture = self.thumbnail(ui, &image.thumb, move || griddb.download(&thumb).ok());
                 if self.image_button(ui, texture, "") {
@@ -840,7 +852,7 @@ impl App {
             }
         });
         if let Some(url) = picked {
-            self.apply_artwork(appid, kind, ArtSource::Url(url, GridDb::new(&self.griddb_key)));
+            self.apply_artwork(appid, kind, ArtSource::Url(url, GridDb::new(&self.settings.steamgriddb_key)));
         }
     }
 
@@ -851,9 +863,7 @@ impl App {
             None => ui.add_sized(size, egui::Button::new(if caption.is_empty() { "…" } else { caption }).truncate()),
         };
         self.take_first_focus(&response);
-        if response.gained_focus() {
-            response.scroll_to_me(Some(Align::Center));
-        }
+        self.follow_focus(&response);
         response.clicked()
     }
 
@@ -1030,14 +1040,21 @@ impl App {
     }
 
     fn settings(&mut self, ui: &mut egui::Ui, mut key: String) {
+        let zoom = format!("{:.0}%", self.settings.zoom * 100.0);
+        if self.row(ui, "UI zoom", &zoom) {
+            self.settings.zoom = self.settings.next_zoom();
+            ui.ctx().set_zoom_factor(self.settings.zoom);
+            let result = self.settings.write();
+            self.finish_local(result, "Saved");
+        }
         Self::note(ui, "SteamGridDB API key (optional, for artwork search; steamgriddb.com > Preferences > API):");
         let submitted = self.text_field(ui, &mut key);
         if let Some(Screen::Settings(buffer)) = self.stack.last_mut() {
             buffer.clone_from(&key);
         }
         if self.row(ui, "Save", "") || submitted {
-            self.griddb_key = key.trim().to_string();
-            let result = settings_write(&self.griddb_key);
+            self.settings.steamgriddb_key = key.trim().to_string();
+            let result = self.settings.write();
             self.finish_local(result, "Saved");
             self.back();
         }
@@ -1108,16 +1125,34 @@ fn settings_path() -> PathBuf {
     home().join(".config/lepton-padmap/manager.json")
 }
 
-fn settings_read() -> String {
-    let json: serde_json::Value =
-        std::fs::read_to_string(settings_path()).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
-    json["steamgriddb_key"].as_str().unwrap_or_default().to_string()
+const ZOOMS: [f32; 6] = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
+
+struct Settings {
+    steamgriddb_key: String,
+    zoom: f32,
 }
 
-fn settings_write(key: &str) -> std::io::Result<()> {
-    let path = settings_path();
-    std::fs::create_dir_all(path.parent().unwrap_or(Path::new("/")))?;
-    std::fs::write(path, serde_json::json!({ "steamgriddb_key": key }).to_string())
+impl Settings {
+    fn read() -> Settings {
+        let text = std::fs::read_to_string(settings_path()).unwrap_or_default();
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+        Settings {
+            steamgriddb_key: json["steamgriddb_key"].as_str().unwrap_or_default().to_string(),
+            zoom: json["zoom"].as_f64().map_or(1.0, |z| (z as f32).clamp(ZOOMS[0], ZOOMS[ZOOMS.len() - 1])),
+        }
+    }
+
+    fn write(&self) -> std::io::Result<()> {
+        let path = settings_path();
+        std::fs::create_dir_all(path.parent().unwrap_or(Path::new("/")))?;
+        let json = serde_json::json!({ "steamgriddb_key": self.steamgriddb_key, "zoom": self.zoom });
+        std::fs::write(path, json.to_string())
+    }
+
+    /// The next larger zoom, wrapping round to the smallest.
+    fn next_zoom(&self) -> f32 {
+        ZOOMS.into_iter().find(|&z| z > self.zoom + 0.01).unwrap_or(ZOOMS[0])
+    }
 }
 
 fn style(ctx: &Context) {
@@ -1192,6 +1227,30 @@ mod tests {
         harness.state_mut().handle(Msg::Connected(false));
         assert!(harness.state().busy.is_none(), "the check's result clears its busy overlay");
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn moving_down_scrolls_the_focused_row_into_view() {
+        let (dir, steam) = crate::steam::tests::fixture();
+        let mut harness =
+            Harness::builder().with_size(vec2(1280.0, 400.0)).build_eframe(|cc| App::with_steam(cc, steam));
+        harness.run_steps(3);
+        for _ in 0..8 {
+            harness.key_press(Key::ArrowDown);
+            harness.run_steps(3);
+        }
+        let quit = harness.get_by_label("Quit");
+        assert!(quit.is_focused(), "eight downs reach the last row");
+        assert!(quit.rect().bottom() <= 400.0, "the focused row is scrolled on screen: {:?}", quit.rect());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn zoom_steps_up_and_wraps() {
+        let next = |zoom| Settings { steamgriddb_key: String::new(), zoom }.next_zoom();
+        assert_eq!(next(1.0), 1.25);
+        assert_eq!(next(1.1), 1.25, "a hand-edited zoom joins the steps");
+        assert_eq!(next(2.0), 0.75, "the largest wraps to the smallest");
     }
 
     #[test]
