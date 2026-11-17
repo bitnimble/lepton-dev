@@ -1,10 +1,12 @@
 use base64::Engine;
 use serde_json::{Value, json};
+use std::net::{TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tungstenite::Message;
 
 const DEBUGGER: &str = "http://127.0.0.1:8080/json";
+const EVALUATE_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Artwork {
@@ -62,7 +64,15 @@ impl SteamClient {
     }
 
     pub fn set_artwork(appid: u32, image: &[u8], kind: Artwork) -> Result<(), String> {
-        let format = if image.starts_with(b"\x89PNG") { "png" } else { "jpg" };
+        let png;
+        let (format, image) = if image.starts_with(b"\x89PNG") {
+            ("png", image)
+        } else if image.starts_with(b"\xFF\xD8") {
+            ("jpg", image)
+        } else {
+            png = to_png(image)?;
+            ("png", png.as_slice())
+        };
         let data = base64::engine::general_purpose::STANDARD.encode(image);
         let kind = kind as u8;
         evaluate(&format!("SteamClient.Apps.SetCustomArtworkForApp({appid}, '{data}', '{format}', {kind})")).map(drop)
@@ -76,6 +86,14 @@ impl SteamClient {
         let game_id = (u64::from(appid) << 32) | 0x0200_0000;
         evaluate(&format!("SteamClient.Apps.RunGame('{game_id}', '', -1, 100)")).map(drop)
     }
+}
+
+/// Steam's artwork API takes PNG or JPEG only (SteamGridDB also serves WebP).
+pub fn to_png(image: &[u8]) -> Result<Vec<u8>, String> {
+    let decoded = image::load_from_memory(image).map_err(|e| format!("unsupported image: {e}"))?;
+    let mut png = std::io::Cursor::new(Vec::new());
+    decoded.write_to(&mut png, image::ImageFormat::Png).map_err(|e| e.to_string())?;
+    Ok(png.into_inner())
 }
 
 fn js(s: &str) -> String {
@@ -102,7 +120,16 @@ fn evaluate_at(debugger: &str, expression: &str) -> Result<Value, String> {
         .find(|t| t["title"] == "SharedJSContext")
         .and_then(|t| t["webSocketDebuggerUrl"].as_str())
         .ok_or("Steam's client context isn't available yet")?;
-    let (mut socket, _) = tungstenite::connect(url).map_err(|e| e.to_string())?;
+    let address = url
+        .strip_prefix("ws://")
+        .and_then(|rest| rest.split('/').next())
+        .and_then(|host| host.to_socket_addrs().ok()?.next())
+        .ok_or_else(|| format!("unexpected debugger address {url}"))?;
+    let stream = TcpStream::connect_timeout(&address, Duration::from_secs(3)).map_err(|e| e.to_string())?;
+    let deadline = Instant::now() + EVALUATE_TIMEOUT;
+    stream.set_read_timeout(Some(EVALUATE_TIMEOUT)).map_err(|e| e.to_string())?;
+    stream.set_write_timeout(Some(EVALUATE_TIMEOUT)).map_err(|e| e.to_string())?;
+    let (mut socket, _) = tungstenite::client(url, stream).map_err(|e| e.to_string())?;
     let request = json!({
         "id": 1,
         "method": "Runtime.evaluate",
@@ -110,6 +137,9 @@ fn evaluate_at(debugger: &str, expression: &str) -> Result<Value, String> {
     });
     socket.send(Message::text(request.to_string())).map_err(|e| e.to_string())?;
     loop {
+        if Instant::now() >= deadline {
+            return Err("Steam didn't answer in time".into());
+        }
         let message = socket.read().map_err(|e| e.to_string())?;
         let Message::Text(text) = message else { continue };
         let reply: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
@@ -117,6 +147,9 @@ fn evaluate_at(debugger: &str, expression: &str) -> Result<Value, String> {
             continue;
         }
         let _ = socket.close(None);
+        if let Some(error) = reply.get("error") {
+            return Err(error["message"].as_str().unwrap_or("Steam rejected the request").to_string());
+        }
         if let Some(details) = reply["result"].get("exceptionDetails") {
             let message = details["exception"]["description"].as_str().or(details["text"].as_str());
             return Err(message.unwrap_or("Steam reported an error").to_string());
@@ -175,6 +208,13 @@ mod tests {
             "exceptionDetails": { "text": "Uncaught", "exception": { "description": "Error: Steam did not add the shortcut" } },
         } }));
         assert_eq!(evaluate_at(&url, "x").unwrap_err(), "Error: Steam did not add the shortcut");
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn reports_protocol_errors() {
+        let (url, server) = fake_steam(json!({ "error": { "code": -32000, "message": "Execution context was destroyed." } }));
+        assert_eq!(evaluate_at(&url, "x").unwrap_err(), "Execution context was destroyed.");
         server.join().unwrap();
     }
 

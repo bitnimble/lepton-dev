@@ -36,6 +36,10 @@ impl Steam {
         Steam { root, user }
     }
 
+    pub fn has_user(&self) -> bool {
+        self.user.is_some()
+    }
+
     pub fn compatdata(&self, appid: u32) -> PathBuf {
         self.root.join("steamapps/compatdata").join(appid.to_string())
     }

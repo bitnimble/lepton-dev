@@ -63,16 +63,25 @@ fn binary_map(data: &[u8], pos: &mut usize) -> Option<Map> {
         }
         let key = cstring(data, pos)?;
         let value = match kind {
-            0x00 => Value::Map(binary_map(data, pos)?),
-            0x01 => Value::Str(cstring(data, pos)?),
+            0x00 => Some(Value::Map(binary_map(data, pos)?)),
+            0x01 => Some(Value::Str(cstring(data, pos)?)),
             0x02 => {
                 let bytes = data.get(*pos..*pos + 4)?;
                 *pos += 4;
-                Value::Int(i32::from_le_bytes(bytes.try_into().ok()?))
+                Some(Value::Int(i32::from_le_bytes(bytes.try_into().ok()?)))
+            }
+            // float, pointer, colour; uint64, int64: kept out of the map, nothing here reads them
+            0x03 | 0x04 | 0x06 | 0x07 | 0x0A => {
+                let size = if kind >= 0x07 { 8 } else { 4 };
+                data.get(*pos..*pos + size)?;
+                *pos += size;
+                None
             }
             _ => return None,
         };
-        map.insert(key, value);
+        if let Some(value) = value {
+            map.insert(key, value);
+        }
         if *pos == data.len() {
             return Some(map);
         }
@@ -195,6 +204,7 @@ pub(crate) mod tests {
             out.push(0);
         }
         out.extend_from_slice(b"\x00tags\0\x08");
+        out.extend_from_slice(b"\x07LastPlayTime64\0\x01\x02\x03\x04\x05\x06\x07\x08");
         out.push(0x08);
         out
     }

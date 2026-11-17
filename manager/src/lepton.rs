@@ -1,6 +1,6 @@
 use crate::steam::{Shortcut, Tool, home};
 use std::fs;
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -31,8 +31,8 @@ pub fn new_slot(name: &str) -> io::Result<PathBuf> {
     for n in 1.. {
         let file = dir.join(if n == 1 { format!("{base}.apkm") } else { format!("{base} {n}.apkm") });
         match fs::OpenOptions::new().write(true).create_new(true).open(&file) {
-            Ok(_) => {
-                fs::write(&file, b"lepton-play-slot\n")?;
+            Ok(mut handle) => {
+                handle.write_all(b"lepton-play-slot\n")?;
                 return Ok(file);
             }
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
@@ -83,7 +83,8 @@ pub fn installed_packages(compat: &Path) -> Vec<String> {
     };
     let mut packages: Vec<String> = String::from_utf8_lossy(&output.stdout)
         .lines()
-        .filter_map(|dir| dir.rsplit_once('-').map(|(package, _)| package.to_string()))
+        // <package>-<url-safe base64>: package names have no '-', the suffix may
+        .filter_map(|dir| dir.split_once('-').map(|(package, _)| package.to_string()))
         .filter(|p| is_package_name(p) && p != "app.padmap")
         .collect();
     packages.sort();

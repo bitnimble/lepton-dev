@@ -1,4 +1,4 @@
-use crate::client::{Artwork, SteamClient};
+use crate::client::{self, Artwork, SteamClient};
 use crate::griddb::{GridDb, Image};
 use crate::lepton;
 use crate::pad::Pad;
@@ -61,7 +61,7 @@ enum Screen {
 
 enum Msg {
     Connected(bool),
-    Done(Result<String, String>),
+    Done(Result<String, String>, Undo),
     Packages(u32, Vec<String>),
     Gsf(u32, Option<String>),
     Added(Result<(u32, String, PathBuf, String), String>),
@@ -72,6 +72,16 @@ enum Msg {
     TaskEnd(bool),
 }
 
+/// The override to drop when a Steam change fails.
+#[derive(Clone, Copy)]
+enum Undo {
+    Nothing,
+    Name(u32),
+    Tool(u32),
+    Removed(u32),
+    SelfAdded,
+}
+
 /// Session-local view of changes Steam may not have written to its files yet.
 #[derive(Default)]
 struct Overrides {
@@ -80,6 +90,18 @@ struct Overrides {
     tools: HashMap<u32, String>,
     removed: HashSet<u32>,
     self_added: bool,
+}
+
+impl Overrides {
+    fn undo(&mut self, undo: Undo) {
+        match undo {
+            Undo::Nothing => {}
+            Undo::Name(appid) => drop(self.names.remove(&appid)),
+            Undo::Tool(appid) => drop(self.tools.remove(&appid)),
+            Undo::Removed(appid) => drop(self.removed.remove(&appid)),
+            Undo::SelfAdded => self.self_added = false,
+        }
+    }
 }
 
 pub struct App {
@@ -104,6 +126,7 @@ pub struct App {
     gsf: HashMap<u32, Option<String>>,
     grid_games: Vec<(u64, String)>,
     grid_images: Vec<Image>,
+    files: Vec<PathBuf>,
     textures: HashMap<String, TextureHandle>,
     thumbs_requested: HashSet<String>,
     task_log: Vec<String>,
@@ -139,11 +162,12 @@ impl App {
             status: None,
             connected: None,
             griddb_key: settings_read(),
-            pad: Pad::new(),
+            pad: Pad::new(&cc.egui_ctx),
             packages: HashMap::new(),
             gsf: HashMap::new(),
             grid_games: Vec::new(),
             grid_images: Vec::new(),
+            files: Vec::new(),
             textures: HashMap::new(),
             thumbs_requested: HashSet::new(),
             task_log: Vec::new(),
@@ -156,9 +180,10 @@ impl App {
 
     fn refresh(&mut self) {
         let mapping = self.steam.tool_mapping();
-        let mut games: Vec<Game> = self
-            .steam
-            .shortcuts()
+        let shortcuts = self.steam.shortcuts();
+        let exe = std::env::current_exe().ok();
+        self.in_steam = self.overrides.self_added || shortcuts.iter().any(|s| Some(&s.exe) == exe.as_ref());
+        let mut games: Vec<Game> = shortcuts
             .into_iter()
             .filter(lepton::is_game)
             .filter(|s| !self.overrides.removed.contains(&s.appid))
@@ -190,8 +215,6 @@ impl App {
         }
         games.sort_by_key(|g| g.name.to_lowercase());
         self.games = games;
-        let exe = std::env::current_exe().ok();
-        self.in_steam = self.overrides.self_added || self.steam.shortcuts().iter().any(|s| Some(&s.exe) == exe.as_ref());
         self.tools = self.steam.lepton_tools();
     }
 
@@ -232,7 +255,11 @@ impl App {
 
     fn spawn(&mut self, label: &str, job: impl FnOnce() -> Msg + Send + 'static) {
         self.busy = Some(label.to_string());
-        self.spawn_quiet(job);
+        self.spawn_quiet(move || {
+            // a panicking job would otherwise leave the busy overlay up for good
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(job))
+                .unwrap_or_else(|_| Msg::Done(Err("Something went wrong; try again".into()), Undo::Nothing))
+        });
     }
 
     fn spawn_quiet(&self, job: impl FnOnce() -> Msg + Send + 'static) {
@@ -244,24 +271,38 @@ impl App {
         });
     }
 
-    /// Runs a change through Steam's client API, asking for the one-time Steam setup first when needed.
-    fn steam_change(&mut self, label: &str, done: &str, change: impl FnOnce() -> Result<(), String> + Send + 'static) {
+    /// Runs a change through Steam's client API, asking for the one-time Steam setup first when needed; false when
+    /// it didn't start.
+    fn steam_change(
+        &mut self,
+        label: &str,
+        done: &str,
+        undo: Undo,
+        change: impl FnOnce() -> Result<(), String> + Send + 'static,
+    ) -> bool {
         if self.connected != Some(true) {
             self.push(Screen::Connect);
-            return;
+            return false;
         }
         let done = done.to_string();
-        self.spawn(label, move || Msg::Done(change().map(|()| done)));
+        self.spawn(label, move || Msg::Done(change().map(|()| done), undo));
+        true
     }
 
     fn handle(&mut self, msg: Msg) {
         match msg {
-            Msg::Connected(ok) => self.connected = Some(ok),
-            Msg::Done(result) => {
+            Msg::Connected(ok) => {
+                self.busy = None;
+                self.connected = Some(ok);
+            }
+            Msg::Done(result, undo) => {
                 self.busy = None;
                 self.status = Some(match result {
                     Ok(text) => (text, false),
-                    Err(e) => (e, true),
+                    Err(e) => {
+                        self.overrides.undo(undo);
+                        (e, true)
+                    }
                 });
                 self.refresh();
             }
@@ -275,6 +316,7 @@ impl App {
                 self.busy = None;
                 match result {
                     Ok((appid, name, exe, tool)) => {
+                        self.overrides.removed.remove(&appid);
                         let slot = lepton::is_slot(&exe);
                         self.overrides.added.push(Game {
                             appid,
@@ -385,12 +427,11 @@ impl eframe::App for App {
         while let Ok(msg) = self.rx.try_recv() {
             self.handle(msg);
         }
-        ctx.request_repaint_after(Duration::from_millis(50));
         let navigating = ctx.input(|i| {
             [Key::ArrowUp, Key::ArrowDown, Key::ArrowLeft, Key::ArrowRight, Key::Enter].iter().any(|k| i.key_pressed(*k))
         });
-        if self.busy.is_none() {
-            if ctx.input(|i| i.key_pressed(Key::Escape)) && !ctx.egui_wants_keyboard_input() {
+        if self.busy.is_none() && !self.task_running {
+            if ctx.input(|i| i.key_pressed(Key::Escape)) {
                 self.back();
             } else if navigating && ctx.memory(|m| m.focused()).is_none() {
                 self.focus_first = true;
@@ -512,10 +553,14 @@ impl App {
 
     fn home(&mut self, ui: &mut egui::Ui) {
         Self::section(ui, "Games");
+        if !self.steam.has_user() {
+            Self::note(ui, "No Steam account found: sign in to Steam once, then reopen the manager.");
+        }
         for game in self.games.clone() {
             let detail = format!("{} · {}", game_target(&game), self.tool_name(game.tool.as_deref()));
             if self.row(ui, &game.name, &detail) {
                 self.packages.remove(&game.appid);
+                self.gsf.remove(&game.appid);
                 self.push(Screen::Game(game.appid));
             }
         }
@@ -542,10 +587,13 @@ impl App {
         if !self.in_steam && self.row(ui, "Add Lepton Game Manager to Steam", "to open it from Gaming Mode") {
             match std::env::current_exe() {
                 Ok(exe) => {
-                    self.overrides.self_added = true;
-                    self.steam_change("Adding to Steam", "Added: it's under Non-Steam in your library", move || {
-                        SteamClient::add_shortcut("Lepton Game Manager", &exe, None).map(drop)
-                    });
+                    let started = self.steam_change(
+                        "Adding to Steam",
+                        "Added: it's under Non-Steam in your library",
+                        Undo::SelfAdded,
+                        move || SteamClient::add_shortcut("Lepton Game Manager", &exe, None).map(drop),
+                    );
+                    self.overrides.self_added |= started;
                 }
                 Err(e) => self.status = Some((e.to_string(), true)),
             }
@@ -573,7 +621,7 @@ impl App {
         };
         let compat = self.steam.compatdata(appid);
         if self.row(ui, "Play", "") {
-            self.steam_change("Starting", "Started", move || SteamClient::run(appid));
+            self.steam_change("Starting", "Started", Undo::Nothing, move || SteamClient::run(appid));
         }
         if game.slot {
             if self.row(ui, "Game", &game_target(&game)) {
@@ -671,9 +719,11 @@ impl App {
         }
         if (self.row(ui, "Save", "") || submitted) && !name.trim().is_empty() {
             let name = name.trim().to_string();
-            self.overrides.names.insert(appid, name.clone());
-            self.steam_change("Renaming", "Renamed", move || SteamClient::rename(appid, &name));
-            self.back();
+            let saved = name.clone();
+            if self.steam_change("Renaming", "Renamed", Undo::Name(appid), move || SteamClient::rename(appid, &saved)) {
+                self.overrides.names.insert(appid, name);
+                self.back();
+            }
         }
     }
 
@@ -682,10 +732,12 @@ impl App {
         for tool in self.tools.clone() {
             let detail = if current.as_deref() == Some(tool.id.as_str()) { "current" } else { tool.bundle.as_str() };
             if self.row(ui, &tool.name, detail) {
-                self.overrides.tools.insert(appid, tool.id.clone());
                 let id = tool.id.clone();
-                self.steam_change("Switching runtime", "Runtime changed", move || SteamClient::set_tool(appid, &id));
-                self.back();
+                let change = move || SteamClient::set_tool(appid, &id);
+                if self.steam_change("Switching runtime", "Runtime changed", Undo::Tool(appid), change) {
+                    self.overrides.tools.insert(appid, tool.id);
+                    self.back();
+                }
                 return;
             }
         }
@@ -719,12 +771,13 @@ impl App {
             self.push(Screen::GridGames(appid, kind));
         }
         if self.row(ui, "Pick an image file", "Pictures, Downloads, Desktop") {
+            self.files = image_files();
             self.push(Screen::LocalImages(appid, kind));
         }
     }
 
     fn local_images(&mut self, ui: &mut egui::Ui, appid: u32, kind: Option<Artwork>) {
-        let files = image_files();
+        let files = self.files.clone();
         if files.is_empty() {
             Self::note(ui, "No .png or .jpg files in Pictures, Downloads or Desktop.");
             return;
@@ -792,7 +845,7 @@ impl App {
     }
 
     fn apply_artwork(&mut self, appid: u32, kind: Option<Artwork>, source: ArtSource) {
-        self.steam_change("Applying artwork", "Artwork updated", move || {
+        let change = move || {
             let bytes = match &source {
                 ArtSource::File(file) => std::fs::read(file).map_err(|e| e.to_string())?,
                 ArtSource::Url(url, griddb) => griddb.download(url)?,
@@ -806,38 +859,53 @@ impl App {
                             let dir = home().join(".local/share/lepton-padmap/icons");
                             std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
                             let file = dir.join(format!("{appid}.png"));
-                            std::fs::write(&file, &bytes).map_err(|e| e.to_string())?;
+                            std::fs::write(&file, client::to_png(&bytes)?).map_err(|e| e.to_string())?;
                             file
                         }
                     };
                     SteamClient::set_icon(appid, &icon)
                 }
             }
-        });
-        self.stack.retain(|s| !matches!(s, Screen::ArtworkSource(..) | Screen::LocalImages(..) | Screen::GridGames(..) | Screen::GridImages(..)));
-        self.focus_first = true;
+        };
+        if self.steam_change("Applying artwork", "Artwork updated", Undo::Nothing, change) {
+            self.stack.retain(|s| {
+                !matches!(s, Screen::ArtworkSource(..) | Screen::LocalImages(..) | Screen::GridGames(..) | Screen::GridImages(..))
+            });
+            self.focus_first = true;
+        }
     }
 
     fn remove(&mut self, ui: &mut egui::Ui, appid: u32) {
         Self::note(ui, "Removing the shortcut keeps the game's Android data unless you delete it too; adding the same game with the same name again picks the data back up.");
         if self.row(ui, "Remove from Steam", "keep game data") {
-            self.overrides.removed.insert(appid);
-            self.steam_change("Removing", "Removed", move || SteamClient::remove(appid));
-            self.reset_to(Screen::Home);
+            self.remove_game(appid, || Ok(()));
             return;
         }
         if self.row_coloured(ui, "Remove and delete game data", "sign-in, saves, installed apps", DANGER) {
-            self.overrides.removed.insert(appid);
             let compat = self.steam.compatdata(appid);
-            self.steam_change("Removing", "Removed", move || {
-                SteamClient::remove(appid)?;
-                lepton::delete_profile(&compat).map_err(|e| e.to_string())
+            let slot = self.game(appid).filter(|g| g.slot).map(|g| g.exe.clone());
+            self.remove_game(appid, move || {
+                lepton::delete_profile(&compat).map_err(|e| e.to_string())?;
+                match slot {
+                    Some(file) => std::fs::remove_file(file).map_err(|e| e.to_string()),
+                    None => Ok(()),
+                }
             });
-            self.reset_to(Screen::Home);
             return;
         }
         if self.row(ui, "Cancel", "") {
             self.back();
+        }
+    }
+
+    fn remove_game(&mut self, appid: u32, cleanup: impl FnOnce() -> Result<(), String> + Send + 'static) {
+        let change = move || {
+            cleanup()?;
+            SteamClient::remove(appid)
+        };
+        if self.steam_change("Removing", "Removed", Undo::Removed(appid), change) {
+            self.overrides.removed.insert(appid);
+            self.reset_to(Screen::Home);
         }
     }
 
@@ -846,12 +914,13 @@ impl App {
             self.push(Screen::AddName(Source::Play, String::new()));
         }
         if self.row(ui, "From a game file", ".apk or .apkm") {
+            self.files = game_files();
             self.push(Screen::AddFile);
         }
     }
 
     fn add_file(&mut self, ui: &mut egui::Ui) {
-        let files = game_files();
+        let files = self.files.clone();
         if files.is_empty() {
             Self::note(ui, "No .apk or .apkm files in Downloads, Desktop or your home folder.");
         }
@@ -890,11 +959,15 @@ impl App {
                 let name = name.clone();
                 self.spawn("Adding to Steam", move || {
                     Msg::Added((|| {
-                        let exe = match source {
+                        let exe = match &source {
                             Source::Play => lepton::new_slot(&name).map_err(|e| e.to_string())?,
-                            Source::File(file) => file,
+                            Source::File(file) => file.clone(),
                         };
-                        let appid = SteamClient::add_shortcut(&name, &exe, Some(&tool.id))?;
+                        let appid = SteamClient::add_shortcut(&name, &exe, Some(&tool.id)).inspect_err(|_| {
+                            if source == Source::Play {
+                                let _ = std::fs::remove_file(&exe);
+                            }
+                        })?;
                         Ok((appid, name, exe, tool.id))
                     })())
                 });
@@ -914,7 +987,7 @@ impl App {
         );
         Self::note(ui, "In its controller settings, turn on Touchscreen Native Support so screen taps reach the game.");
         if self.row(ui, "Play now", "") {
-            self.steam_change("Starting", "Started", move || SteamClient::run(appid));
+            self.steam_change("Starting", "Started", Undo::Nothing, move || SteamClient::run(appid));
         }
         if self.row(ui, "Done", "") {
             self.reset_to(Screen::Home);
@@ -1095,6 +1168,29 @@ mod tests {
         harness.get_by_label("Allow").click();
         harness.run_steps(3);
         assert!(dir.join(".cef-enable-remote-debugging").is_file(), "Allow enables Steam's debugging port");
+        harness.get_by_label("Check again").click();
+        harness.run_steps(3);
+        harness.state_mut().handle(Msg::Connected(false));
+        assert!(harness.state().busy.is_none(), "the check's result clears its busy overlay");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn b_leaves_a_text_screen_and_a_failed_rename_is_undone() {
+        let (dir, steam) = crate::steam::tests::fixture();
+        let mut harness =
+            Harness::builder().with_size(vec2(1280.0, 800.0)).build_eframe(|cc| App::with_steam(cc, steam));
+        harness.run_steps(3);
+        harness.state_mut().push(Screen::Rename(0xB676_0000, "UNITE".into()));
+        harness.run_steps(3);
+        assert!(harness.get_by_role(egui::Role::TextInput).is_focused(), "the name field takes focus");
+        harness.key_press(Key::Escape);
+        harness.run_steps(3);
+        assert!(matches!(harness.state().stack.last(), Some(Screen::Home)), "B leaves the screen");
+        let app = harness.state_mut();
+        app.overrides.names.insert(0xB676_0000, "Renamed".into());
+        app.handle(Msg::Done(Err("Steam rejected the request".into()), Undo::Name(0xB676_0000)));
+        assert_eq!(app.game(0xB676_0000).unwrap().name, "UNITE", "a failed rename keeps the old name");
         std::fs::remove_dir_all(dir).unwrap();
     }
 }
