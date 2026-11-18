@@ -151,39 +151,57 @@ static int lepton_range_has(const char *s, long n, const char *sub) {
     return 0;
 }
 
-static long lepton_read_file(const char *path, char *buf, long cap) {
-    long fd = syscall(257, -100L, path, 0L, 0L); /* openat AT_FDCWD O_RDONLY */
-    if (fd < 0) return -1;
-    long total = 0, n;
-    while (total < cap && (n = syscall(0, fd, buf + total, cap - total)) > 0) total += n;
-    syscall(3, fd);
-    return total;
+#define LEPTON_MAPS_CHUNK 0x10000L
+#define LEPTON_MAPS_LINE_MAX 0x1100L
+
+static void *lepton_scratch(long size) {
+    long p = syscall(9, 0L, size, 3L /* RW */, 0x22L /* MAP_PRIVATE|MAP_ANONYMOUS */, -1L, 0L);
+    return p == -1 ? 0 : (void *)p;
 }
 
-/* Lowest start / highest end of all mappings whose line contains needle. */
-static unsigned long lepton_module_base(const char *maps, const char *needle, unsigned long *end_out) {
-    unsigned long base = 0, end = 0;
-    for (const char *p = maps; *p;) {
-        const char *line = p;
-        while (*p && *p != '\n') p++;
-        int found = 0;
-        for (const char *q = line; q < p; q++) {
-            const char *a = q, *b = needle;
-            while (a < p && *b && *a == *b) { a++; b++; }
-            if (!*b) { found = 1; break; }
+/* Calls fn on every /proc/self/maps line, without its newline. */
+static int lepton_each_maps_line(void (*fn)(const char *line, long n, void *ctx), void *ctx) {
+    long fd = syscall(257, -100L, "/proc/self/maps", 0L, 0L); /* openat AT_FDCWD O_RDONLY */
+    if (fd < 0) return -1;
+    char *chunk = lepton_scratch(LEPTON_MAPS_CHUNK + LEPTON_MAPS_LINE_MAX);
+    if (!chunk) { syscall(3, fd); return -1; }
+    char *line = chunk + LEPTON_MAPS_CHUNK;
+    long ln = 0, n;
+    while ((n = syscall(0, fd, chunk, LEPTON_MAPS_CHUNK)) > 0) {
+        for (long i = 0; i < n; i++) {
+            if (chunk[i] != '\n') {
+                if (ln < LEPTON_MAPS_LINE_MAX) line[ln++] = chunk[i];
+                continue;
+            }
+            fn(line, ln, ctx);
+            ln = 0;
         }
-        if (found) {
-            unsigned long s = 0, e = 0; const char *c = line;
-            while (c < p && *c != '-') { s = s * 16 + lepton_hex(*c); c++; }
-            if (c < p) c++;
-            while (c < p && *c != ' ') { e = e * 16 + lepton_hex(*c); c++; }
-            if (!base || s < base) base = s;
-            if (e > end) end = e;
-        }
-        if (*p == '\n') p++;
     }
-    if (end_out) *end_out = end;
-    return base;
+    if (ln) fn(line, ln, ctx);
+    syscall(11, chunk, LEPTON_MAPS_CHUNK + LEPTON_MAPS_LINE_MAX);
+    syscall(3, fd);
+    return n < 0 ? -1 : 0;
+}
+
+/* Parses "start-end perms"; returns the perms' offset in line. */
+static long lepton_maps_range(const char *line, long n, unsigned long *start, unsigned long *end) {
+    long c = 0;
+    *start = *end = 0;
+    while (c < n && line[c] != '-') *start = *start * 16 + lepton_hex(line[c++]);
+    if (c < n) c++;
+    while (c < n && line[c] != ' ') *end = *end * 16 + lepton_hex(line[c++]);
+    return c < n ? c + 1 : n;
+}
+
+struct lepton_module { const char *needle; unsigned long base, end; };
+
+static void lepton_module_line(const char *line, long n, void *ctx) {
+    struct lepton_module *m = ctx;
+    if (!lepton_range_has(line, n, m->needle)) return;
+    unsigned long s, e;
+    lepton_maps_range(line, n, &s, &e);
+    if (!m->base || s < m->base) m->base = s;
+    if (e > m->end) m->end = e;
 }
 
 static int lepton_app_hex(char *buf, int p, unsigned long v) {
@@ -194,30 +212,29 @@ static int lepton_app_hex(char *buf, int p, unsigned long v) {
     return p;
 }
 
+static void lepton_write_all(int fd, const char *buf, long len) {
+    long wi = 0, w;
+    while (wi < len && (w = syscall(1, fd, buf + wi, len - wi)) > 0) wi += w;
+}
+
 static int lepton_memfd(const char *name, const char *buf, long len) {
     int mfd = (int)syscall(319 /* memfd_create */, name, 0);
     if (mfd < 0) return -1;
-    long wi = 0, w;
-    while (wi < len && (w = syscall(1, mfd, buf + wi, len - wi)) > 0) wi += w;
+    lepton_write_all(mfd, buf, len);
     syscall(8 /* lseek */, mfd, 0, 0);
     return mfd;
 }
 
-/* True if addr falls in a readable mapping. Guards a deref at a fixed offset
+/* Which of two addresses fall in readable mappings. Guards a deref at a fixed offset
  * from a module base against landing in an inter-segment PROT_NONE gap. */
-static int lepton_addr_readable(const char *maps, unsigned long addr) {
-    for (const char *p = maps; *p;) {
-        const char *line = p;
-        while (*p && *p != '\n') p++;
-        unsigned long s = 0, e = 0; const char *c = line;
-        while (c < p && *c != '-') { s = s * 16 + lepton_hex(*c); c++; }
-        if (c < p) c++;
-        while (c < p && *c != ' ') { e = e * 16 + lepton_hex(*c); c++; }
-        if (c < p) c++;
-        if (addr >= s && addr < e) return c < p && *c == 'r';
-        if (*p == '\n') p++;
-    }
-    return 0;
+struct lepton_readable { unsigned long addr[2]; int readable[2]; };
+
+static void lepton_readable_line(const char *line, long n, void *ctx) {
+    struct lepton_readable *r = ctx;
+    unsigned long s, e;
+    long perms = lepton_maps_range(line, n, &s, &e);
+    for (int i = 0; i < 2; i++)
+        if (r->addr[i] >= s && r->addr[i] < e) r->readable[i] = perms < n && line[perms] == 'r';
 }
 
 /* Guest-consistent value for the /proc syscall PC field. On real arm64 the
@@ -230,19 +247,19 @@ static volatile unsigned int lepton_psum[3] = {0x54000001u, 0x54000001u, 0x54000
 static unsigned long lepton_guest_syscall_p(void) {
     static unsigned long cached; static int done;
     if (__atomic_load_n(&done, __ATOMIC_ACQUIRE)) return cached;
-    static char maps[1200000];
-    long mlen = lepton_read_file("/proc/self/maps", maps, sizeof(maps) - 1);
-    if (mlen > 0) {
-        maps[mlen] = 0;
-        unsigned long hi, lo = lepton_module_base(maps, "/system/lib64/arm64/libc.so", &hi);
-        unsigned long cand = lo + 0xe8a5;
-        if (lo && hi > cand && lepton_addr_readable(maps, cand - 8) && lepton_addr_readable(maps, cand)) {
-            unsigned w0 = *(volatile unsigned *)(cand - 8), w1 = *(volatile unsigned *)(cand - 4), w2 = *(volatile unsigned *)cand;
-            if ((unsigned)(w0 + w1 + w2) == 0xFC000003u) cached = cand;
-        }
+    unsigned long p = 0;
+    struct lepton_module libc = { "/system/lib64/arm64/libc.so", 0, 0 };
+    lepton_each_maps_line(lepton_module_line, &libc);
+    unsigned long cand = libc.base + 0xe8a5;
+    struct lepton_readable r = { { cand - 8, cand }, { 0, 0 } };
+    if (libc.base && libc.end > cand) lepton_each_maps_line(lepton_readable_line, &r);
+    if (r.readable[0] && r.readable[1]) {
+        unsigned w0 = *(volatile unsigned *)(cand - 8), w1 = *(volatile unsigned *)(cand - 4), w2 = *(volatile unsigned *)cand;
+        if ((unsigned)(w0 + w1 + w2) == 0xFC000003u) p = cand;
     }
-    int fell_back = !cached;
-    if (!cached) cached = (unsigned long)&lepton_psum[2];
+    int fell_back = !p;
+    if (!p) p = (unsigned long)&lepton_psum[2];
+    cached = p;
     __atomic_store_n(&done, 1, __ATOMIC_RELEASE);
     __android_log_write(4, "LeptonSyscallP", fell_back ? "P = host-triple fallback" : "P = guest libc offset");
     return cached;
@@ -266,38 +283,46 @@ static int lepton_syscall_fd(void) {
  * see the host x86_64 libc, the translator, its exec_region and the host linker.
  * Serve a memfd reduced to a pure-arm64 view (anon/stack/heap, arm64 libs, app
  * data, dev, ART artifacts). */
-static int lepton_filtered_maps_fd(void) {
-    static char in[384 * 1024];
-    long total = lepton_read_file("/proc/self/maps", in, sizeof(in) - 1);
-    if (total < 0) return -1;
-    static char out[384 * 1024];
-    long oi = 0, ls = 0;
-    for (long i = 0; i <= total; i++) {
-        if (i != total && in[i] != '\n') continue;
-        long slash = -1;
-        for (long j = ls; j < i; j++) if (in[j] == '/') { slash = j; break; }
-        int keep;
-        if (slash < 0) keep = 1; /* anon, [stack], [heap], [anon:*] */
-        else {
-            const char *p = in + slash; long pn = i - slash;
-            keep = lepton_range_has(p, pn, "/arm64/") || lepton_range_has(p, pn, "/data/") ||
-                   lepton_range_has(p, pn, "/dev/") || lepton_range_has(p, pn, "dalvik-cache") ||
-                   lepton_range_has(p, pn, ".art") || lepton_range_has(p, pn, ".oat") ||
-                   lepton_range_has(p, pn, ".vdex") || lepton_range_has(p, pn, ".odex") ||
-                   lepton_range_has(p, pn, "memfd") || lepton_range_has(p, pn, ".apk") ||
-                   lepton_range_has(p, pn, ".jar");
-        }
-        if (keep) {
-            for (long j = ls; j < i; j++) out[oi++] = in[j];
-            if (i < total) out[oi++] = '\n';
-        }
-        ls = i + 1;
-    }
-    return lepton_memfd("m", out, oi);
+static int lepton_guest_visible(const char *line, long n) {
+    long slash = 0;
+    while (slash < n && line[slash] != '/') slash++;
+    if (slash == n) return 1; /* anon, [stack], [heap], [anon:*] */
+    const char *p = line + slash; long pn = n - slash;
+    return lepton_range_has(p, pn, "/arm64/") || lepton_range_has(p, pn, "/data/") ||
+           lepton_range_has(p, pn, "/dev/") || lepton_range_has(p, pn, "dalvik-cache") ||
+           lepton_range_has(p, pn, ".art") || lepton_range_has(p, pn, ".oat") ||
+           lepton_range_has(p, pn, ".vdex") || lepton_range_has(p, pn, ".odex") ||
+           lepton_range_has(p, pn, "memfd") || lepton_range_has(p, pn, ".apk") ||
+           lepton_range_has(p, pn, ".jar");
 }
 
-/* Only the NDK bridge may read the guest-consistent /proc views; native x86
- * callers keep the real files. Returns a memfd, or -1 to fall through. */
+struct lepton_maps_out { int fd; char *buf; long n; };
+
+static void lepton_guest_maps_line(const char *line, long n, void *ctx) {
+    struct lepton_maps_out *out = ctx;
+    if (!lepton_guest_visible(line, n)) return;
+    if (out->n + n + 1 > LEPTON_MAPS_CHUNK) {
+        lepton_write_all(out->fd, out->buf, out->n);
+        out->n = 0;
+    }
+    for (long i = 0; i < n; i++) out->buf[out->n++] = line[i];
+    out->buf[out->n++] = '\n';
+}
+
+static int lepton_filtered_maps_fd(void) {
+    struct lepton_maps_out out = { (int)syscall(319 /* memfd_create */, "m", 0), lepton_scratch(LEPTON_MAPS_CHUNK), 0 };
+    int ok = out.fd >= 0 && out.buf && lepton_each_maps_line(lepton_guest_maps_line, &out) == 0;
+    if (ok) lepton_write_all(out.fd, out.buf, out.n);
+    if (out.buf) syscall(11, out.buf, LEPTON_MAPS_CHUNK);
+    if (!ok) {
+        if (out.fd >= 0) syscall(3, out.fd);
+        return -1;
+    }
+    syscall(8 /* lseek */, out.fd, 0, 0);
+    return out.fd;
+}
+
+/* Returns a memfd, or -1 to fall through. */
 static int lepton_maps_intercept(const char *path, const void *caller) {
     (void)caller;
     if (!path) return -1;
@@ -434,7 +459,8 @@ EXPORT void interpret(void *state) {
             for (const char *t = "/proc/self/fd/"; *t; t++) path[pi++] = *t;
             unsigned long fd = r[0]; char tmp[20]; int ti = 0;
             if (!fd) tmp[ti++] = '0'; else while (fd) { tmp[ti++] = '0' + fd % 10; fd /= 10; }
-            while (ti) path[pi++] = tmp[--ti]; path[pi] = 0;
+            while (ti) path[pi++] = tmp[--ti];
+            path[pi] = 0;
             char lt[128]; long rl = syscall(267, -100, path, lt, sizeof(lt) - 1); /* readlinkat */
             if (rl > 0) { lt[rl] = 0; if (lepton_contains(lt, "syscall")) is_syscall_read = 1; }
         }
