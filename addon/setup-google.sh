@@ -9,7 +9,6 @@ SETUP_MAX_SECONDS=1200
 setup_google() {
     local start=$SECONDS quiet_since=$SECONDS last now
     log "setting up Google services ($(google_versions))"
-    install_helper || log "installing the helper app failed; the Play Store stays on screen"
     last="$(received_bytes)"
     while alive; do
         show_wait
@@ -29,12 +28,6 @@ setup_google() {
     done
     # Android powering off ends the launch the way Steam's Exit does
     guest reboot -p >/dev/null 2>&1
-}
-
-install_helper() {
-    podman exec -i "$C" sh -c "cat > /data/local/tmp/lepton-helper.apk" <"$ADDON/lepton-helper.apk" &&
-        # cmd_real, not pm: Lepton's cmd wrapper treats every install as the game and moves the game's APKs away
-        guest cmd_real package install -r /data/local/tmp/lepton-helper.apk </dev/null >/dev/null
 }
 
 show_wait() {

@@ -14,9 +14,17 @@ lepton_padmap_entry() {
     printf 'lepton-padmap: session %s, args: %s, NDK mode: %s\n' "$dir" "$*" "${LEPTON_NDK_TRANSLATION_MODE:-auto}"
     python3 "$addon/ndk-translation/fix.py" "$TOOL/images/rootfs" "$TOOL/images/rootfs_overlay" || true
     python3 "$addon/ndk-translation/cpuinfo.py" "$TOOL/images/rootfs" "$TOOL/images/rootfs_overlay" || true
+    lepton_padmap_overlay "$addon/lepton-helper.apk" system/priv-app/LeptonHelper/LeptonHelper.apk
+    lepton_padmap_overlay "$addon/lepton_home.rc" system/etc/init/lepton_home.rc
     # Steam's shader-cache layer segfaults the nested gamescope it gets injected into
     export VK_LOADER_LAYERS_DISABLE="${VK_LOADER_LAYERS_DISABLE:+$VK_LOADER_LAYERS_DISABLE,}*fossilize*"
     lepton_padmap_plain_gamescope
+}
+
+lepton_padmap_overlay() {
+    local src="$1" dest="$TOOL/images/rootfs_overlay/$2"
+    [[ -f "$src" ]] && ! cmp -s "$src" "$dest" || return 0
+    mkdir -p "${dest%/*}" && cp "$src" "$dest.new" && mv -f "$dest.new" "$dest" || rm -f "$dest.new"
 }
 
 lepton_padmap_plain_gamescope() {

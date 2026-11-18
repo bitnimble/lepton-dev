@@ -1,0 +1,3 @@
+# a set HOME role outranks the loading screen's intent-filter priority; profiles first booted without the helper give it to Launcher3
+on property:sys.boot_completed=1
+    exec_background -- /system/bin/cmd role add-role-holder --user 0 android.app.role.HOME app.lepton.helper
