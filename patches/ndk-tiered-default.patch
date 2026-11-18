@@ -1,0 +1,63 @@
+--- a/compat_tool/liblepton/ndk_auxv/runtime.sh
++++ b/compat_tool/liblepton/ndk_auxv/runtime.sh
+@@ -46,7 +46,7 @@
+     #     optimization of hot code);
+     #   the game's recorded choice (ndk_prepare_installed_app): "tiered" when
+     #     its ARM64 code needs no shim-only instructions;
+-    #   light-translate-or-interpret (the shim can emulate everything).
++    #   tiered (games that exit early in it are recorded as light).
+     # LEPTON_ENV_NDK_TRANSLATION_FLAGS: default accurate-sigsegv; "none" = no flags.
+     local tmode="${LEPTON_NDK_TRANSLATION_MODE:-}" game_mode=""
+     export LEPTON_NDK_MODE_SOURCE=setting
+@@ -60,7 +60,7 @@
+         if [[ "$game_mode" == tiered || "$game_mode" == light-translate-or-interpret ]]; then
+             tmode="$game_mode"; LEPTON_NDK_MODE_SOURCE=game
+         else
+-            tmode=light-translate-or-interpret; LEPTON_NDK_MODE_SOURCE=default
++            tmode=tiered; LEPTON_NDK_MODE_SOURCE=default
+         fi
+     fi
+     export LEPTON_NDK_ACTIVE_MODE="$tmode"
+@@ -108,7 +108,7 @@
+ # is switched back to the light mode (with the shim's emulation) for next time.
+ function ndk_note_early_exit()
+ {
+-    if [[ "${LEPTON_NDK_MODE_SOURCE:-}" == game && "${LEPTON_NDK_ACTIVE_MODE:-}" == tiered ]]; then
++    if [[ "${LEPTON_NDK_MODE_SOURCE:-}" != setting && "${LEPTON_NDK_ACTIVE_MODE:-}" == tiered ]]; then
+         print light-translate-or-interpret > "$(ndk_game_mode_file)"
+         println "Game exited early in the tiered NDK translator mode; using the light mode from the next launch."
+     fi
+--- a/compat_tool/liblepton/ndk_auxv/test-runtime.sh
++++ b/compat_tool/liblepton/ndk_auxv/test-runtime.sh
+@@ -45,7 +45,7 @@
+ configure_ndk_compat "$rc" > "$work/enabled.log"
+ [[ ${#mounts[@]} == 1 ]]
+ grep -qx '    setenv LD_PRELOAD /system/lib64/liblepton_ndk_auxv.so' "$rc"
+-grep -qx '    setenv NDK_TRANSLATION_MODE light-translate-or-interpret' "$rc"
++! grep -q 'NDK_TRANSLATION_MODE' "$rc"
+ grep -qx '    setenv NDK_TRANSLATION_FLAGS accurate-sigsegv' "$rc"
+ : > "$rc"; mounts=()
+ LEPTON_NDK_COMPAT=false configure_ndk_compat "$rc"
+@@ -59,10 +59,10 @@
+ if LEPTON_ENV_NDK_TRANSLATION_MODE=heavy-optimize configure_ndk_compat "$rc" 2> "$work/mode.log"; then echo 'FAIL: incompatible mode accepted'; exit 1; fi
+ [[ ! -s "$rc" && ${#mounts[@]} == 0 ]]
+ 
+-# Translator mode: default light; the game's recorded choice; explicit setting wins.
++# Translator mode: default tiered; the game's recorded choice; explicit setting wins.
+ mode_line() { grep 'NDK_TRANSLATION_MODE' "$rc" || echo '(tiered: no mode line)'; }
+ : > "$rc"; configure_ndk_compat "$rc" > /dev/null
+-[[ "$(mode_line)" == '    setenv NDK_TRANSLATION_MODE light-translate-or-interpret' && "$LEPTON_NDK_MODE_SOURCE" == default ]]
++[[ "$(mode_line)" == '(tiered: no mode line)' && "$LEPTON_NDK_MODE_SOURCE" == default && "$LEPTON_NDK_ACTIVE_MODE" == tiered ]]
+ echo tiered > "$work/baked/lepton-ndk-mode"
+ : > "$rc"; configure_ndk_compat "$rc" > /dev/null
+ [[ "$(mode_line)" == '(tiered: no mode line)' && "$LEPTON_NDK_MODE_SOURCE" == game && "$LEPTON_NDK_ACTIVE_MODE" == tiered ]]
+@@ -122,6 +122,9 @@
+ echo tiered > "$work/baked/lepton-ndk-mode"
+ LEPTON_NDK_MODE_SOURCE=game LEPTON_NDK_ACTIVE_MODE=tiered ndk_note_early_exit > /dev/null
+ [[ "$(cat "$work/baked/lepton-ndk-mode")" == light-translate-or-interpret ]]
++rm -f "$work/baked/lepton-ndk-mode"
++LEPTON_NDK_MODE_SOURCE=default LEPTON_NDK_ACTIVE_MODE=tiered ndk_note_early_exit > /dev/null
++[[ "$(cat "$work/baked/lepton-ndk-mode")" == light-translate-or-interpret ]]   # so does the default tiered mode
+ echo tiered > "$work/baked/lepton-ndk-mode"
+ LEPTON_NDK_MODE_SOURCE=setting LEPTON_NDK_ACTIVE_MODE=tiered ndk_note_early_exit > /dev/null
+ [[ "$(cat "$work/baked/lepton-ndk-mode")" == tiered ]]   # an explicit setting is respected

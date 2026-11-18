@@ -50,8 +50,8 @@ Android build (restart Steam afterwards). A bundle copied into `~/lepton-dev/bun
 lepton-dev's `bin/build-deck-bundle.sh`) is installed instead of building. Without the manager:
 `bash ~/lepton-dev/deck/update.sh`.
 
-Lepton picks the ARM translator mode per game: the fast tiered mode when the game's code allows it (Pokémon
-UNITE does), falling back to the light mode for the next launch if a game exits early in tiered. The add-on
+Lepton runs ARM games in the fast tiered translator mode unless the game's code needs the light mode, and falls back
+to the light mode for the next launch if a game exits early in tiered. The add-on
 supplies a fixed copy of Google's translator, without which tiered mode hangs UNITE at "Loading..."; game files
 are untouched. If a game misbehaves in tiered, launch option `LEPTON_NDK_TRANSLATION_MODE=light-translate-or-interpret
 %command%` forces the light mode.

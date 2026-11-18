@@ -17,7 +17,7 @@ touch mapping ([deck/README.md](deck/README.md)).
 | `manager/` | The Lepton Game Manager (Rust, egui): adds and manages Lepton games in Steam, from Desktop or Gaming Mode |
 | `helper/` | The Lepton helper app (Kotlin + Compose, its own Gradle project): Android screens the add-on shows itself, e.g. the spinner while `addon/setup-google.sh` lets Play update Google services |
 | `bundle/` (gitignored) | On the Deck: Android bundles built by `deck/build-bundle.sh` or copied from `data/deck-dist/<id>/` |
-| `patches/` | Patched release files that `patches/apply.sh` installs into a `compat_tool/` (runner stages via `bin/push.sh`, the runner's Deck bundle, the Deck via `deck/install.sh`): `liblepton.sh`, `properties.sh`, `lepton-x86_64-entry`, `lepton-gamescope-bridge` and the NDK compatibility shim (`ndk_auxv.c`, built to `liblepton_ndk_auxv.so` by `bin/build-ndk-shim.sh`); the `*.patch` files document the `liblepton.sh`, entry and Gamescope bridge changes |
+| `patches/` | Patched release files that `patches/apply.sh` installs into a `compat_tool/` (runner stages via `bin/push.sh`, the runner's Deck bundle, the Deck via `deck/install.sh`): `liblepton.sh`, `properties.sh`, `lepton-x86_64-entry`, `lepton-gamescope-bridge`, the NDK translator-mode choice (`runtime.sh` and its `test-runtime.sh`) and the NDK compatibility shim (`ndk_auxv.c`, built to `liblepton_ndk_auxv.so` by `bin/build-ndk-shim.sh`); the `*.patch` files document the changes to the release's scripts |
 | `diag/` | Hang-triage probes for a running session |
 | `docs/screens/` | Reference screenshots |
 | `data/` (gitignored) | Release bundle, Google r14 system image, APK/APKM files, sysbox sources/builds, screenshots |
