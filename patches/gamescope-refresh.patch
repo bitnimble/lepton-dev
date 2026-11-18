@@ -1,0 +1,21 @@
+--- a/compat_tool/tools/lepton-gamescope-bridge
++++ b/compat_tool/tools/lepton-gamescope-bridge
+@@ -220,10 +220,17 @@
+     exit "${status:-0}"
+ fi
+ 
++# Android takes its only display mode from the nested output, which is 60Hz unless -r sets it
++refresh="${STEAM_DISPLAY_REFRESH_LIMITS:-}"
++refresh="${refresh##*,}"
++refresh_args=()
++[[ ! "$refresh" =~ ^[1-9][0-9]*$ ]] || refresh_args=(-r "$refresh")
++echo "Lepton Gamescope refresh: ${refresh_args[1]:-gamescope default} (STEAM_DISPLAY_REFRESH_LIMITS=${STEAM_DISPLAY_REFRESH_LIMITS:-unset})"
++
+ # Preserve Gaming Mode's SDL/X11 backend, fullscreen and Steam window tagging.
+ SDL_VIDEODRIVER=x11 ENABLE_GAMESCOPE_WSI=0 \
+ gamescope --backend sdl --expose-wayland -f \
+-    -W "$width" -H "$height" -w "$width" -h "$height" \
++    -W "$width" -H "$height" -w "$width" -h "$height" "${refresh_args[@]}" \
+     --default-touch-mode "$gaming_touch_mode" \
+     -- sh -c 'export GAMESCOPE_WAYLAND_DISPLAY="$WAYLAND_DISPLAY"; exec "$@"' sh "$@" &
+ child=$!

@@ -1,0 +1,295 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+set -Eeuo pipefail
+# Steam hides this script's exit status and output from the player, so an
+# unexpected stop must at least say where in Steam's console log.
+trap 'echo "ERROR: lepton-gamescope-bridge stopped at line $LINENO: $BASH_COMMAND (exit $?)" >&2' ERR
+# Tells lepton-x86_64-entry (inside the nested Gamescope) not to add another bridge.
+export LEPTON_BRIDGE_ACTIVE=1
+
+# shellcheck source=compat_tool/tools/lepton-display-common.sh
+source "$(dirname -- "${BASH_SOURCE[0]}")/lepton-display-common.sh"
+
+# Gaming Mode must keep its tested SDL/X11 fullscreen path. A KDE Plasma
+# Wayland desktop can instead use Gamescope's native Wayland window backend.
+# Wayland variables alone are not sufficient: Gaming Mode is also Wayland.
+# SteamOS's Gaming Mode session exports GAMESCOPE_WAYLAND_DISPLAY. Without that
+# or a KDE session, prefer a desktop window: a fullscreen Gaming Mode window on
+# a desktop has no way out on a Steam Deck.
+display_mode="${LEPTON_DISPLAY_MODE:-auto}"
+case "$display_mode" in
+    auto)
+        session_hint="${XDG_CURRENT_DESKTOP:-} ${XDG_SESSION_DESKTOP:-} ${DESKTOP_SESSION:-}"
+        session_hint="${session_hint,,}"
+        if [[ "${XDG_SESSION_TYPE:-}" == wayland &&
+              " $session_hint " =~ (kde|plasma) ]]; then
+            display_mode=desktop
+        elif [[ -n "${GAMESCOPE_WAYLAND_DISPLAY:-}" ]]; then
+            display_mode=gaming
+        elif [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+            echo "WARNING: display mode uncertain (no KDE or Gamescope session found); using a desktop window. Set LEPTON_DISPLAY_MODE=gaming to override." >&2
+            display_mode=desktop
+        else
+            echo "WARNING: display mode uncertain and no Wayland display; using the Gaming Mode (X11) path. Set LEPTON_DISPLAY_MODE to override." >&2
+            display_mode=gaming
+        fi
+        ;;
+    desktop|gaming) ;;
+    *)
+        echo "ERROR: LEPTON_DISPLAY_MODE must be auto, desktop or gaming" >&2
+        exit 2
+        ;;
+esac
+outer_display="${DISPLAY:-}"
+if [[ "$display_mode" == desktop ]]; then
+    [[ -n "${WAYLAND_DISPLAY:-}" && -n "${XDG_RUNTIME_DIR:-}" ]] || {
+        echo "ERROR: Desktop Wayland requires WAYLAND_DISPLAY and XDG_RUNTIME_DIR" >&2
+        exit 1
+    }
+else
+    [[ -n "$outer_display" ]] || {
+        echo "ERROR: Gaming Mode needs an X11 DISPLAY for Steam window tagging" >&2
+        exit 1
+    }
+    # Gaming Mode depends on these host X11 tools; record what this launch sees
+    # (Steam's runtime-launched environment can differ from a terminal's).
+    x11_tools=""
+    for tool in xdpyinfo xwininfo xprop awk; do
+        x11_tools+=" $tool=$(command -v "$tool" || echo MISSING)"
+    done
+    echo "Lepton Gaming Mode X11: DISPLAY=$outer_display XAUTHORITY=${XAUTHORITY:-<unset>};$x11_tools"
+fi
+
+# Experimental, opt-in (LEPTON_DESKTOP_DIRECT=1): no Gamescope; Android draws
+# straight into a KDE window. Known problems with fractional desktop scaling:
+# Android gets the wrong size, pointer positions miss and the window does not
+# redraw reliably. Kept for later work on desktop support.
+if [[ "$display_mode" == desktop && "${LEPTON_DESKTOP_DIRECT:-0}" == 1 ]]; then
+    exec "$(dirname -- "${BASH_SOURCE[0]}")/lepton-direct-wayland" "$@"
+fi
+
+# Nested Wayland Gamescope routes absolute mouse motion through its touch
+# handler. Passthrough (4) can leave Android's mouse at (0,0); left-click
+# mode (1) supports mouse and single-touch emulation, without native multitouch. Each nested backend has its own touch override;
+# direct Wayland bypasses both.
+if [[ "$display_mode" == desktop ]]; then
+    desktop_touch_mode="${LEPTON_DESKTOP_TOUCH_MODE-1}"
+    case "$desktop_touch_mode" in
+        0|1|4) ;;
+        *)
+            printf 'ERROR: Invalid LEPTON_DESKTOP_TOUCH_MODE: %q; expected 0 (hover), 1 (left-click, default), or 4 (passthrough)\n' "$desktop_touch_mode" >&2
+            exit 2
+            ;;
+    esac
+    echo "Lepton Desktop Mode touch mode: $desktop_touch_mode (--default-touch-mode $desktop_touch_mode)"
+else
+    # Experimental Gaming Mode comparisons; preserve passthrough by default.
+    gaming_touch_mode="${LEPTON_GAMING_TOUCH_MODE-4}"
+    case "$gaming_touch_mode" in
+        0|1|4) ;;
+        *)
+            printf 'ERROR: Invalid LEPTON_GAMING_TOUCH_MODE: %q; expected 0 (hover), 1 (left-click), or 4 (passthrough, default)\n' "$gaming_touch_mode" >&2
+            exit 2
+            ;;
+    esac
+    echo "Lepton Gaming Mode touch mode: $gaming_touch_mode"
+fi
+
+# Android's screen size is fixed when it starts, so pick it now.
+# Desktop: a movable KDE window at 80% of the usable desktop, 16:10 (1024x640
+# on a Steam Deck, also the fallback), so the title bar and panel stay
+# reachable. LEPTON_DESKTOP_FULLSCREEN=1 fills the main screen instead.
+# LEPTON_RESOLUTION=WxH sets Android's size in either case (the window's size
+# when windowed). LEPTON_DESKTOP_WINDOWED=1 is the default and still accepted.
+# Gaming Mode: unchanged; the screen's size, or LEPTON_RESOLUTION, fullscreen.
+#
+# Prints the main screen as "physical_w physical_h logical_w logical_h", with
+# rotation applied (the Deck's panel is 800x1280, rotated) and scale for logical.
+desktop_screen_size() {
+    command -v kscreen-doctor >/dev/null 2>&1 || return 1
+    kscreen-doctor -j 2>/dev/null | python3 -c '
+import json, sys
+outputs = [o for o in json.load(sys.stdin).get("outputs", []) if o.get("enabled")]
+outputs.sort(key=lambda o: o.get("priority") or 99)  # 1 = main screen
+for o in outputs:
+    mode = {m["id"]: m for m in o.get("modes", [])}.get(o.get("currentModeId"))
+    if mode:
+        w, h = mode["size"]["width"], mode["size"]["height"]
+        if o.get("rotation") in (2, 8):  # left / right: portrait panel
+            w, h = h, w
+        scale = float(o.get("scale") or 1) or 1
+        print(w, h, int(w / scale), int(h / scale))
+        break
+' 2>/dev/null
+}
+resolution="${LEPTON_RESOLUTION:-}"
+if [[ "$display_mode" == desktop && -n "$resolution" && ! "$resolution" =~ ^[1-9][0-9]*x[1-9][0-9]*$ ]]; then
+    echo "WARNING: Invalid LEPTON_RESOLUTION: $resolution (expected WIDTHxHEIGHT); using the default" >&2
+    resolution=""
+fi
+desktop_fullscreen=()
+if [[ "$display_mode" == desktop ]]; then
+    if [[ "${LEPTON_DESKTOP_FULLSCREEN:-0}" == 1 && "${LEPTON_DESKTOP_WINDOWED:-0}" == 1 ]]; then
+        echo "WARNING: LEPTON_DESKTOP_FULLSCREEN=1 and LEPTON_DESKTOP_WINDOWED=1 both set; using a window" >&2
+    elif [[ "${LEPTON_DESKTOP_FULLSCREEN:-0}" == 1 ]]; then
+        desktop_fullscreen=(-f)
+    fi
+    if [[ -z "$resolution" ]]; then
+        resolution=1024x640
+        if read -r phys_w phys_h logical_w logical_h < <(desktop_screen_size) &&
+           [[ "$phys_w $phys_h $logical_w $logical_h" =~ ^[1-9][0-9]*\ [1-9][0-9]*\ [1-9][0-9]*\ [1-9][0-9]*$ ]]; then
+            if (( ${#desktop_fullscreen[@]} )); then
+                resolution="${phys_w}x${phys_h}"
+            else
+                # 80% of the desktop, 16:10, even sizes.
+                width=$(( logical_w * 8 / 10 ))
+                height=$(( width * 10 / 16 ))
+                if (( height > logical_h * 8 / 10 )); then
+                    height=$(( logical_h * 8 / 10 ))
+                    width=$(( height * 16 / 10 ))
+                fi
+                (( width >= 320 && height >= 200 )) &&
+                    resolution="$(( width / 2 * 2 ))x$(( height / 2 * 2 ))"
+            fi
+        fi
+    fi
+fi
+if [[ -z "$resolution" ]]; then
+    # A failed query must reach the fallback below, never end the launch.
+    if x11_info="$(DISPLAY="$outer_display" xdpyinfo 2>&1)"; then
+        resolution="$(awk '/dimensions:/ {print $2; exit}' <<< "$x11_info")"
+    else
+        echo "WARNING: xdpyinfo cannot read the X11 screen size on ${outer_display:-<no DISPLAY>}: $(head -n 1 <<< "$x11_info")" >&2
+    fi
+fi
+if [[ -z "$resolution" ]]; then
+    # The root window has the screen's size; xwininfo is also used for tagging.
+    if x11_info="$(DISPLAY="$outer_display" xwininfo -root 2>&1)"; then
+        resolution="$(awk '/^ *Width:/ {w=$2} /^ *Height:/ {h=$2} END {if (w && h) print w "x" h}' <<< "$x11_info")"
+        [[ -z "$resolution" ]] || echo "Screen size from xwininfo: $resolution"
+    else
+        echo "WARNING: xwininfo cannot read the X11 screen size either: $(head -n 1 <<< "$x11_info")" >&2
+    fi
+fi
+
+if [[ ! "$resolution" =~ ^[1-9][0-9]*x[1-9][0-9]*$ ]]; then
+    echo "WARNING: Invalid or unavailable resolution: $resolution" >&2
+    resolution="1280x800"
+fi
+
+width="${resolution%x*}"
+height="${resolution#*x}"
+
+window=fullscreen
+[[ "$display_mode" != desktop || ${#desktop_fullscreen[@]} -gt 0 ]] || window=windowed
+echo "Lepton Gamescope mode: $display_mode; resolution: ${width}x${height}; $window"
+
+lepton_check_binder || exit 1
+
+message_file="$(mktemp "${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/lepton-message.XXXXXX" 2>/dev/null)" || message_file=""
+[[ -z "$message_file" ]] || export LEPTON_MESSAGE_FILE="$message_file"
+# The nested Gamescope (and Android inside it) never outlives the bridge: on
+# any exit, including an unexpected error, it gets TERM and time for Lepton's
+# graceful Stop (HOME, save wait, Android power-off: up to about 20s), and is
+# killed only after LEPTON_BRIDGE_STOP_TIMEOUT seconds.
+child=""
+stop_timeout="${LEPTON_BRIDGE_STOP_TIMEOUT:-30}"
+[[ "$stop_timeout" =~ ^[1-9][0-9]*$ ]] || stop_timeout=30
+stop_child() {
+    [[ -n "$child" ]] && kill -0 "$child" 2>/dev/null || return 0
+    kill -TERM "$child" 2>/dev/null || true
+    local tick
+    for ((tick = 0; tick < stop_timeout * 4; tick++)); do
+        kill -0 "$child" 2>/dev/null || return 0
+        sleep 0.25 2>/dev/null || true
+    done
+    echo "WARNING: nested Gamescope $child did not stop within ${stop_timeout}s after TERM; killing it" >&2
+    kill -KILL "$child" 2>/dev/null || true
+}
+trap 'stop_child; cleanup_message_file' EXIT
+
+if [[ "$display_mode" == desktop ]]; then
+    # A movable KDE window (fullscreen only on request), no X11 Steam window
+    # tagging. Never --borderless: Plasma's title bar is the way out.
+    # The inner gamescope sets WAYLAND_DISPLAY for the Lepton container.
+    ENABLE_GAMESCOPE_WSI=0 gamescope --backend wayland --expose-wayland "${desktop_fullscreen[@]}" \
+        -W "$width" -H "$height" -w "$width" -h "$height" \
+        --default-touch-mode "$desktop_touch_mode" \
+        -- sh -c 'export GAMESCOPE_WAYLAND_DISPLAY="$WAYLAND_DISPLAY"; exec "$@"' sh "$@" || status=$?
+    show_launch_message
+    exit "${status:-0}"
+fi
+
+# Android takes its only display mode from the nested output, which is 60Hz unless -r sets it
+refresh="${STEAM_DISPLAY_REFRESH_LIMITS:-}"
+refresh="${refresh##*,}"
+refresh_args=()
+[[ ! "$refresh" =~ ^[1-9][0-9]*$ ]] || refresh_args=(-r "$refresh")
+echo "Lepton Gamescope refresh: ${refresh_args[1]:-gamescope default} (STEAM_DISPLAY_REFRESH_LIMITS=${STEAM_DISPLAY_REFRESH_LIMITS:-unset})"
+
+# Preserve Gaming Mode's SDL/X11 backend, fullscreen and Steam window tagging.
+SDL_VIDEODRIVER=x11 ENABLE_GAMESCOPE_WSI=0 \
+gamescope --backend sdl --expose-wayland -f \
+    -W "$width" -H "$height" -w "$width" -h "$height" "${refresh_args[@]}" \
+    --default-touch-mode "$gaming_touch_mode" \
+    -- sh -c 'export GAMESCOPE_WAYLAND_DISPLAY="$WAYLAND_DISPLAY"; exec "$@"' sh "$@" &
+child=$!
+
+# Steam Stop/INT: forward TERM; the wait below then lets Lepton finish.
+trap 'kill -TERM "$child" 2>/dev/null || true' INT TERM
+
+tagged=0
+set_warned=0
+confirm_warned=0
+for ((i=0; i<120; i++)); do
+    kill -0 "$child" 2>/dev/null || break
+
+    while read -r win; do
+        [[ -n "$win" ]] || continue
+
+        # X11 failures are reported and retried; they never end the launch.
+        owner=$(DISPLAY="$outer_display" xprop -id "$win" _NET_WM_PID 2>/dev/null |
+            awk -F '= ' 'NF > 1 {print $2}') || owner=""
+
+        if [[ "$owner" == "$child" ]]; then
+            if DISPLAY="$outer_display" xprop -id "$win" \
+                -f STEAM_GAME 32c -set STEAM_GAME "$app_id"; then
+                # Confirmed only when Steam's property reads back as this AppID.
+                game_property=$(DISPLAY="$outer_display" xprop -id "$win" STEAM_GAME 2>/dev/null |
+                    awk -F '= ' 'NF > 1 {print $2}') || game_property=""
+                if [[ "$game_property" == "$app_id" ]]; then
+                    echo "Assigned Steam AppID $app_id to window $win (_NET_WM_PID $owner; STEAM_GAME confirmed)"
+                    tagged=1
+                    break
+                fi
+                (( confirm_warned )) || echo "WARNING: STEAM_GAME on Gamescope window $win reads back as '${game_property:-<unreadable>}', expected $app_id; retrying" >&2
+                confirm_warned=1
+            else
+                (( set_warned )) || echo "WARNING: could not set STEAM_GAME on Gamescope window $win; retrying" >&2
+                set_warned=1
+            fi
+        fi
+    done < <(
+        DISPLAY="$outer_display" xwininfo -root -tree 2>/dev/null |
+            awk '/"gamescope":/ {print $1}'
+    )
+
+    (( tagged )) && break
+    sleep 0.25
+done
+
+if (( ! tagged )); then
+    echo "WARNING: Gamescope window was not identified or tagged with STEAM_GAME $app_id; Steam may keep it behind its own UI (no focus)" >&2
+fi
+# Read-only diagnostics: Steam's current Gamescope layer order (never changed here).
+base_layer=$(DISPLAY="$outer_display" xprop -root GAMESCOPECTRL_BASELAYER_APPID 2>/dev/null) || base_layer=""
+echo "Gamescope base layer: ${base_layer#*= }"
+wait "$child" || status=$?
+# A trapped INT/TERM interrupts wait while Lepton is still stopping: give it
+# the same bounded time as on exit, then collect its status.
+if kill -0 "$child" 2>/dev/null; then
+    stop_child
+    wait "$child" 2>/dev/null || status=$?
+fi
+show_launch_message
+exit "${status:-0}"
