@@ -34,10 +34,21 @@ find_bundles() {  # newest first
     ((${#bundles[@]} == 0)) || mapfile -t bundles < <(ls -t -- "${bundles[@]}")
 }
 
-if command -v podman >/dev/null 2>&1 && [[ -n "$(podman ps -q --filter label=lepton=true 2>/dev/null)" ]]; then
-    echo "A Lepton game is running; quit it first." >&2
-    exit 1
-fi
+stop_orphaned_containers() {
+    local name pid orphans=()
+    while read -r name pid; do
+        if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+            echo "A Lepton game (${name#lepton-}) is running; quit it first." >&2
+            exit 1
+        fi
+        orphans+=("${name#lepton-}")
+    done < <(podman ps --filter label=lepton=true --format '{{.Names}} {{index .Labels "lepton_pid"}}' 2>/dev/null)
+    for name in "${orphans[@]}"; do
+        echo "Stopping ${name}: its game was killed or crashed and left it running"
+        "$TOOL/compat_tool/lepton" stop "$name" >/dev/null 2>&1 || podman stop -t 0 "lepton-$name" >/dev/null
+    done
+}
+! command -v podman >/dev/null 2>&1 || stop_orphaned_containers
 
 source "$REPO/deck/bundle.env"
 installed="$(installed_id)"
