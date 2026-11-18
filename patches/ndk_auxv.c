@@ -5,13 +5,15 @@
  * Explicit Bionic declarations allow building with the existing AOSP Clang
  * without downloading an NDK sysroot. This library is x86_64 Android only.
  *
- * Beyond the stock register/auxv shim this build adds three general
+ * Beyond the stock register/auxv shim this build adds general
  * translation-fidelity/compat features, all version-robust (no per-game or
  * per-library hardcoded offsets):
  *   - guest-consistent /proc/self/maps and /proc/self/task/<tid>/syscall, so
  *     guest code never sees host-translator mappings or host-side PCs;
  *   - a low address bias for guest anonymous mmaps, so Unity's (and any guest
  *     allocator's) arm64 VA-ceiling assumption holds under berberis;
+ *   - the device profile's GL vendor, renderer and version (ro.lepton.gl_*)
+ *     for translated games;
  *   - the translation mode is left to Lepton's rc (runtime.sh), not pinned here.
  * Every private-ABI poke stays gated on the bridge build-id check, so a future
  * NDK build disables those features instead of corrupting state; the libc-level
@@ -78,6 +80,8 @@ typedef struct {
 } lepton_dl_info;
 extern int dladdr(const void *, lepton_dl_info *);
 extern void *dlsym(void *, const char *);
+extern void *__loader_dlsym(void *, const char *, const void *);
+extern int __system_property_get(const char *, char *);
 #define LEPTON_RTLD_NEXT ((void *)-1L)
 #define EXPORT __attribute__((visibility("default")))
 #define LOG(message) __android_log_write(4, "LeptonNdkAuxv", message)
@@ -418,6 +422,29 @@ EXPORT void *mmap64(void *addr, __SIZE_TYPE__ length, int prot, int flags, int f
 }
 EXPORT void *mmap(void *addr, __SIZE_TYPE__ length, int prot, int flags, int fd, long long offset) {
     return lepton_guest_mmap(addr, length, prot, flags, fd, offset, __builtin_return_address(0));
+}
+
+#define LEPTON_GL_VENDOR 0x1F00
+static const char *const lepton_gl_props[] = { "ro.lepton.gl_vendor", "ro.lepton.gl_renderer", "ro.lepton.gl_version" };
+static char lepton_gl_strings[3][92];
+static const unsigned char *(*lepton_real_glGetString)(unsigned);
+
+static const unsigned char *lepton_glGetString(unsigned name) {
+    unsigned i = name - LEPTON_GL_VENDOR;
+    if (i < 3 && lepton_gl_strings[i][0]) return (const unsigned char *)lepton_gl_strings[i];
+    return lepton_real_glGetString(name);
+}
+
+/* The translator's GLES proxy resolves host GL entry points with dlsym; native callers get the real ones. */
+EXPORT void *dlsym(void *handle, const char *symbol) {
+    const void *caller = __builtin_return_address(0);
+    void *found = __loader_dlsym(handle, symbol, caller);
+    if (!found || !symbol || strcmp(symbol, "glGetString") || !lepton_caller_in_bridge(caller)) return found;
+    int spoofed = 0;
+    for (int i = 0; i < 3; i++) spoofed |= __system_property_get(lepton_gl_props[i], lepton_gl_strings[i]) > 0;
+    if (!spoofed) return found;
+    lepton_real_glGetString = (const unsigned char *(*)(unsigned))found;
+    return (void *)lepton_glGetString;
 }
 
 EXPORT void fallback(void *)

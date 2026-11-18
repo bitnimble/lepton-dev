@@ -94,6 +94,10 @@ saves land there. The format is in [Padmap's README](../addon/padmap/README.md#l
 Steam launch options for a game: `LEPTON_PADMAP=0 %command%` turns Padmap off, `LEPTON_NDK_TRANSLATION_MODE=<mode>
 %command%` overrides the translator (`tiered`, `light-translate-or-interpret`, `heavy-optimize`, `interpret-only`).
 
+Games see a Samsung Galaxy S23 (SM-S911B, Snapdragon 8 Gen 2, Adreno 740), so ones that pick quality tiers from known
+phones offer their high settings. `LEPTON_DEVICE_PROFILE=lepton %command%` shows Lepton's own identity instead (an
+AMD GPU behind ANGLE on a "Valve Lepton").
+
 ## When something breaks
 
 Every launch writes `~/lepton-logs/<appid>-<date>-<time>/` (the newest is `~/lepton-logs/latest`):

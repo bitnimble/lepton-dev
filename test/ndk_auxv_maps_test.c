@@ -11,6 +11,15 @@ int __android_log_write(int priority, const char *tag, const char *message) {
     (void)priority, (void)tag, (void)message;
     return 0;
 }
+void *__loader_dlsym(void *handle, const char *symbol, const void *caller) {
+    (void)handle, (void)symbol, (void)caller;
+    return 0;
+}
+int __system_property_get(const char *name, char *value) {
+    (void)name;
+    value[0] = 0;
+    return 0;
+}
 #include "../patches/ndk_auxv.c"
 
 #define MAPPINGS 20000

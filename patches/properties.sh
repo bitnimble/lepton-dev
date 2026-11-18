@@ -139,8 +139,22 @@ function setup_props()
     fi
 
     props_echo "ro.vndk.lite=true"
-    props_echo "ro.product.model=Lepton"
-    props_echo "ro.product.manufacturer=Valve"
+    if is_app && [[ "${LEPTON_DEVICE_PROFILE:-phone}" != lepton ]]; then
+        # Games pick quality tiers from known phones; a Galaxy S23 (Snapdragon 8 Gen 2) is high tier
+        props_echo "ro.product.model=SM-S911B"
+        props_echo "ro.product.manufacturer=samsung"
+        props_echo "ro.product.brand=samsung"
+        props_echo "ro.product.device=dm1q"
+        props_echo "ro.product.name=dm1qxxx"
+        props_echo "ro.soc.manufacturer=QTI"
+        props_echo "ro.soc.model=SM8550"
+        props_echo "ro.lepton.gl_vendor=Qualcomm"
+        props_echo "ro.lepton.gl_renderer=Adreno (TM) 740"
+        props_echo "ro.lepton.gl_version=OpenGL ES 3.2 V@0676.42"
+    else
+        props_echo "ro.product.model=Lepton"
+        props_echo "ro.product.manufacturer=Valve"
+    fi
 
     props_echo "ro.steam.running_in_app_container=true"
 
