@@ -13,6 +13,7 @@ lepton_padmap_entry() {
     exec > >(tee -a "$dir/lepton.log") 2>&1
     printf 'lepton-padmap: session %s, args: %s, NDK mode: %s\n' "$dir" "$*" "${LEPTON_NDK_TRANSLATION_MODE:-auto}"
     python3 "$addon/ndk-translation/fix.py" "$TOOL/images/rootfs" "$TOOL/images/rootfs_overlay" || true
+    python3 "$addon/ndk-translation/cpuinfo.py" "$TOOL/images/rootfs" "$TOOL/images/rootfs_overlay" || true
     # Steam's shader-cache layer segfaults the nested gamescope it gets injected into
     export VK_LOADER_LAYERS_DISABLE="${VK_LOADER_LAYERS_DISABLE:+$VK_LOADER_LAYERS_DISABLE,}*fossilize*"
     lepton_padmap_plain_gamescope
