@@ -1,1 +1,1 @@
-padmap 92d2252 2026-11-18 feat: port Padmap to Kotlin, Jetpack Compose and Gradle
+padmap 75e285a 2026-11-18 fix(daemon): merge pad touches with real fingers under Waydroid
