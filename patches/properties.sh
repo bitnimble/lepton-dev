@@ -88,6 +88,9 @@ function setup_props()
         props_echo "debug.stagefright.ccodec=0"
     fi
     props_echo "ro.opengles.version=196609"
+    # Android 14's single-file EGL cache holds 2MB in 64KB entries: games overflow it and recompile every launch
+    props_echo "ro.egl.blobcache.multifile=true"
+    props_echo "ro.egl.blobcache.multifile_limit=$((256 * 1024 * 1024))"
     props_echo "ro.hardware.camera=v4l2"
 
     if [[ "${LEPTON_FORCE_SOFTWARE:-}" == "true" ]]; then
